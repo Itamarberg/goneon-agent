@@ -44,9 +44,10 @@ Dependencies point downward only. Nothing imports `agent/`, `api/` or `mcp_serve
 |---|---|---|---|
 | Interfaces | `api/`, `mcp_server/`, `web/` | HTTP, MCP stdio/SSE, map UI | tools, agent |
 | Agent | `agent/` | Claude tool-runner loop, system prompt | tools |
-| Tools | `tools/` | Public, JSON-serialisable functions (the contract) | checks, rules, data, domain |
-| Checks | `checks/` | Pure geometry checks, registered by `check` type | domain |
-| Rules | `rules/` | Load and validate the YAML catalog | domain |
+| Tools | `tools/` | Public, JSON-serialisable functions (the contract) | generate, checks, catalog, data, domain |
+| Generators | `generate/` | Point and line plan generators; constraints → zones → variants | checks, domain |
+| Checks | `checks/` | Pure constraint checks and zone geometry, registered by type | domain |
+| Catalog | `catalog/` | Load and validate curated constraints (YAML) | domain |
 | Data | `data/` | `DataSource` adapters that return GeoJSON in EPSG:2056 | domain |
 | Domain | `domain/` | Pydantic models: `Feature`, `Rule`, `Citation`, `Finding` | — |
 
@@ -56,19 +57,28 @@ Dependencies point downward only. Nothing imports `agent/`, `api/` or `mcp_serve
 metres, so distances are correct. It is converted to WGS84 only at the API edge
 for the map.
 
-**Rule** (`rules/catalog/*.yaml`):
+> **Current scope:** see [`docs/PLAN.md`](docs/PLAN.md). The product is a website
+> where planners choose constraints and a deterministic generator produces plan
+> variants on real open data. The contracts below reflect that.
+
+**Constraint** (curated ones in `catalog/*.yaml`; planners can add their own):
 ```yaml
-id: tree-utility-clearance
-title: Trees keep clearance from underground utilities
-check: min_distance            # key into checks registry
-applies_to: {subject: tree, object: [gas_main, water_main, power_cable]}
-params: {min_m: 2.0}
-severity: error                # error | warning | info
-citation: {source: "...", section: "...", url: "...", verified: false}
+id: lev-building-clearance
+title: Power line keeps horizontal clearance from buildings
+type: min_distance             # min_distance | max_distance | not_within | within | min_spacing
+applies_to: power_line         # object kind being planned
+layer: building                # real data layer
+params: {d_m: 5.0}
+hard: true                     # hard = must hold; soft = trade-off
+source: {text: "LeV SR 734.31 Art. 38 / Anhang 8", url: "...", kind: curated}
+verified: false                # true only after the source sentence is quoted
 ```
 
+**Variant**: `id, label, features, metrics, findings, tradeoffs`. Features come
+only from generators.
+
 **Finding** (every check returns a list):
-`rule_id, severity, subject_id, object_id, measured, required, message, citation, geometry`.
+`constraint_id, severity, feature_id, measured, required, message, source, geometry`.
 The geometry marks the conflict so the map can highlight it.
 
 **Tool functions** (`tools/core.py`) take and return only JSON-safe types.
@@ -76,45 +86,48 @@ This lets the tool runner, MCP and REST share one contract.
 
 | Tool | Purpose |
 |---|---|
-| `list_layers()` | Available context layers |
-| `get_layer(name, bbox)` | Features as GeoJSON |
-| `list_rules(topic?)` | Rule catalog with citations |
-| `check_plan(plan_features, rule_ids?)` | Run checks and return findings |
-| `explain_rule(rule_id)` | Full rule text and source |
+| `list_layers()` / `get_layer(name, area)` | Real context layers |
+| `list_catalog()` | Curated constraints with sources |
+| `draft_constraint(text)` | Turn a planner's sentence into a constraint *proposal* (planner confirms) |
+| `preview_zones(area, constraints)` | Forbidden / required zones for the map |
+| `generate_points(area, constraints, count\|spacing)` | Point plan variants |
+| `generate_line(start, end, area, constraints)` | Line plan variants |
+| `check_plan(features, constraints)` | Independent verification, findings |
+| `explain_infeasibility(request)` | Which hard constraint blocks, and what relaxing it gives |
 
 ## Scope for the overnight MVP
 
-**In scope:** one Zurich neighbourhood bbox, three rule families (sewer gradient,
-power-line clearance to buildings, tree ↔ utility clearance), and a map where
-planners draw features, get findings and chat. Deployed as one container.
+**In scope:** one Zurich quarter of real open data, 5 generic constraint types, a
+point generator and a line generator, a curated starting catalog, planner-defined
+constraints via the agent, and a website to choose constraints, generate, compare,
+edit and export.
 
 **Deliberately cut, and why:**
-- **Live WFS for every request.** Layers are pre-fetched into `data/fixtures/`
-  by a script. Demos at a hackathon with 100 users can't depend on third-party
-  rate limits. The `DataSource` protocol leaves room to add live adapters later.
-- **Auth and accounts.** Each session is anonymous with in-memory state. Only
-  the LLM calls are rate-limited, per IP.
-- **3D, hydraulics, cost models.** Checks use 2D clearance plus gradient from
-  endpoint elevations. This is enough to show the pattern.
-- **LLM-extracted rules from PDFs.** Rules are curated by hand and marked
-  `verified: false` until a person checks the citation. A wrong rule is worse
-  than a missing one.
+- **Synthetic data.** Real data only; constraints needing non-open data (underground
+  utilities) are reported as "cannot be evaluated".
+- **Domain algorithms** (hydraulics, magnetic-field calculation, network routing).
+  Generic constraints cover placement and clearance; physics needs dedicated check
+  types, which the registry allows later.
+- **Live WFS per request.** Layers are pre-fetched and baked in; a hackathon can't
+  depend on third-party rate limits.
+- **Accounts and server sessions.** Plan state lives in the browser; only chat is
+  rate-limited, per IP.
+- **LLM-supplied thresholds.** Numbers come from the catalog or the planner.
 
 ## Extension points (how others build on it)
 
-1. **Add a rule.** Drop a YAML file into `rules/catalog/`. `pytest` validates it.
-2. **Add a check type.** Write a function in `checks/` and decorate it with
-   `@register("name")`. Add a fixture test.
-3. **Add a data source.** Implement `DataSource` in `data/`.
-4. **Use the tools from another agent.** Run `neon-mcp` and connect any MCP
-   client.
+1. **Add a curated constraint.** Drop a YAML file into `catalog/`. `pytest`
+   validates it.
+2. **Add a constraint type.** Write a check (and its zone geometry for the
+   generators) and register it. Add a fixture test.
+3. **Add a data layer.** Add a loader in `data/` for another open dataset.
+4. **Use the tools from another agent.** Connect any MCP client to `/mcp`.
 
-See `docs/adr/`. A how-to for adding rules (`docs/adding-a-rule.md`) is written in
-Phase P6, once the rule catalog exists.
+See `docs/adr/`.
 
 ## Runtime and deploy
 
-- Python 3.12, FastAPI, shapely, pydantic, `anthropic` SDK, `mcp` SDK.
-- Model: `claude-opus-5` with adaptive thinking, set in `config.py`.
-- `web/` is a static MapLibre page served by FastAPI. There is no build step.
-- One Dockerfile. Deploy to any container host (Fly.io, Render, Cloud Run).
+- Python 3.12, FastAPI, shapely, numpy, pydantic, `anthropic` SDK, `mcp` SDK.
+- Model: `claude-opus-5` with adaptive thinking, set by env var.
+- `web/` is a static MapLibre site on Vercel (no build step). The API is one
+  Dockerfile on Render, with the data baked into the image.
