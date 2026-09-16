@@ -68,7 +68,7 @@ def _area(area: Geometry | None) -> Geometry:
 # --------------------------------------------------------------------------- #
 
 
-def list_layers() -> dict:
+def list_layers() -> dict[str, Any]:
     """Every real data layer in this deployment, and the ones deliberately absent."""
     return {
         "layers": [i.model_dump() for i in _list_layers()],
@@ -76,7 +76,7 @@ def list_layers() -> dict:
     }
 
 
-def describe_area(area: Geometry | None = None) -> dict:
+def describe_area(area: Geometry | None = None) -> dict[str, Any]:
     """What is inside an area: counts per layer, not the geometry.
 
     Counts are what a planner and an agent reason about ("214 buildings, 3
@@ -92,7 +92,7 @@ def describe_area(area: Geometry | None = None) -> dict:
     return {**summary, "feature_counts_in_area": counts, "area": area}
 
 
-def get_layer(name: str, area: Geometry | None = None, limit: int = 2000) -> dict:
+def get_layer(name: str, area: Geometry | None = None, limit: int = 2000) -> dict[str, Any]:
     """One layer's features as GeoJSON in EPSG:2056. For map and MCP clients."""
     try:
         features = get_features_in(name, area)
@@ -112,7 +112,7 @@ def get_layer(name: str, area: Geometry | None = None, limit: int = 2000) -> dic
 # --------------------------------------------------------------------------- #
 
 
-def list_catalog(object_kind: str | None = None) -> dict:
+def list_catalog(object_kind: str | None = None) -> dict[str, Any]:
     """Curated constraints, with sources and whether they can actually be checked."""
     entries = for_object_kind(object_kind) if object_kind else list(load_catalog())
     return {
@@ -140,7 +140,7 @@ def propose_constraint(
     hard: bool = True,
     source_url: str | None = None,
     note: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Validate a constraint a planner described in their own words.
 
     This is where an agent's translation becomes structured data — and where it
@@ -194,7 +194,7 @@ def propose_constraint(
     }
 
 
-def preview_zones(constraints: list[ConstraintRef], area: Geometry | None = None) -> dict:
+def preview_zones(constraints: list[ConstraintRef], area: Geometry | None = None) -> dict[str, Any]:
     """Where objects may and may not go under these constraints.
 
     `allowed_area_m2` is the number worth reading: if it is zero, generation
@@ -226,7 +226,7 @@ def generate_points(
     count: int | None = None,
     spacing_m: float | None = None,
     area: Geometry | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Plan variants for point objects, or an explanation of why there are none."""
     resolved = resolve_constraints(constraints)
     target = _area(area)
@@ -245,7 +245,7 @@ def generate_line(
     start: tuple[float, float],
     end: tuple[float, float],
     area: Geometry | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Route variants between two points, or an explanation of why there are none."""
     resolved = resolve_constraints(constraints)
     target = _area(area)
@@ -256,7 +256,7 @@ def generate_line(
     return {"variants": [v.model_dump() for v in variants], "infeasibility": None}
 
 
-def check_plan(features: list[dict], constraints: list[ConstraintRef]) -> dict:
+def check_plan(features: list[dict], constraints: list[ConstraintRef]) -> dict[str, Any]:
     """Verify a plan — whoever produced it — against a constraint set."""
     try:
         parsed = [Feature.model_validate(f) for f in features]
@@ -275,7 +275,7 @@ def check_plan(features: list[dict], constraints: list[ConstraintRef]) -> dict:
     }
 
 
-def explain_constraint(constraint: ConstraintRef) -> dict:
+def explain_constraint(constraint: ConstraintRef) -> dict[str, Any]:
     """What one constraint means, where its number comes from, and if it can be checked."""
     resolved = resolve_constraints([constraint])[0]
     reason = unevaluable_reason(resolved)
@@ -300,7 +300,7 @@ def explain_infeasibility(
     start: tuple[float, float] | None = None,
     end: tuple[float, float] | None = None,
     area: Geometry | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Which hard constraint blocks a request, and what relaxing it would give."""
     resolved = resolve_constraints(constraints)
     target = _area(area)
