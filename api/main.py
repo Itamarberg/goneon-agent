@@ -266,6 +266,86 @@ def project(request: ProjectRequest) -> dict:
     return {"x": round(x, 2), "y": round(y, 2), "crs": "EPSG:2056"}
 
 
+class DraftConstraintRequest(BaseModel):
+    """A rule the planner is writing themselves, in the UI or through the agent."""
+
+    id: str
+    title: str
+    type: str
+    source_text: str = Field(..., description="Where the planner says the rule comes from.")
+    layer: str | None = None
+    applies_to: str | None = None
+    d_m: float | None = None
+    hard: bool = True
+    weight: float = 1.0
+    source_url: str | None = None
+    area_id: str | None = None
+
+
+@app.post("/api/constraints/draft")
+def draft_constraint(request: DraftConstraintRequest) -> dict:
+    """Validate a planner's own constraint and hand it back as a proposal.
+
+    The same function the agent calls, so a rule typed into the form and a rule
+    dictated to the chat are validated identically — and neither is applied here.
+    Whether it is used is the planner's click (docs/PLAN.md §7).
+    """
+    try:
+        result = tools_core.propose_constraint(
+            id=request.id,
+            title=request.title,
+            type=request.type,
+            source_text=request.source_text,
+            params={"d_m": request.d_m} if request.d_m is not None else {},
+            layer=request.layer,
+            applies_to=request.applies_to,
+            hard=request.hard,
+            source_url=request.source_url,
+            area_id=_area_id(request.area_id),
+        )
+    except tools_core.ToolError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    result["proposal"]["weight"] = request.weight
+    result["description"] = result.get("description")
+    return result
+
+
+@app.get("/api/constraint-types")
+def constraint_types() -> dict:
+    """The constraint vocabulary, so the UI can build a form instead of hard-coding it."""
+    return {
+        "types": [
+            {
+                "name": "min_distance",
+                "label": "at least … m from",
+                "needs_layer": True,
+                "needs_distance": True,
+            },
+            {
+                "name": "max_distance",
+                "label": "within … m of",
+                "needs_layer": True,
+                "needs_distance": True,
+            },
+            {"name": "within", "label": "on", "needs_layer": True, "needs_distance": False},
+            {
+                "name": "not_within",
+                "label": "not inside",
+                "needs_layer": True,
+                "needs_distance": False,
+            },
+            {
+                "name": "min_spacing",
+                "label": "… m between the objects",
+                "needs_layer": False,
+                "needs_distance": True,
+            },
+        ],
+        "registered": registered_types(),
+    }
+
+
 class ZonePreviewRequest(BaseModel):
     """Step 3 of the journey: show what the ticked constraints leave available."""
 
