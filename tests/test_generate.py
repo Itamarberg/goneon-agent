@@ -65,6 +65,54 @@ class TestPointGenerator:
         best = next(v for v in variants if v.id == "points-best_score")
         assert len(best.features) == 20  # soft never costs us objects
 
+    def test_importance_decides_which_preference_is_sacrificed(self):
+        """A planner ranking two preferences must get a plan that reflects the
+        ranking — importance changes the geometry, it is not a label."""
+        pavement = get_constraint("on-public-ground")
+        near_stop = get_constraint("bike-rack-near-stop").model_copy(
+            update={"applies_to": "tree", "hard": False}
+        )
+
+        def broken(pavement_weight, stop_weight):
+            constraints = [
+                *TREE_CONSTRAINTS,
+                pavement.model_copy(update={"weight": pavement_weight}),
+                near_stop.model_copy(update={"weight": stop_weight}),
+            ]
+            variant = next(
+                v
+                for v in generate_points(STUDY_AREA.polygon, constraints, "tree", 15)
+                if v.strategy == "best_score"
+            )
+            return {t.constraint_id: t.count for t in variant.tradeoffs}
+
+        stop_matters = broken(pavement_weight=0.5, stop_weight=5.0)
+        stop_ignored = broken(pavement_weight=5.0, stop_weight=0.5)
+        assert stop_matters.get("bike-rack-near-stop", 0) < stop_ignored.get(
+            "bike-rack-near-stop", 0
+        ), "raising a preference's importance did not reduce how often it is broken"
+
+    def test_tradeoffs_list_the_most_important_compromise_first(self):
+        important = get_constraint("on-public-ground").model_copy(update={"weight": 8.0})
+        minor = get_constraint("bike-rack-near-stop").model_copy(
+            update={"applies_to": "tree", "hard": False, "weight": 0.3}
+        )
+        for v in generate_points(
+            STUDY_AREA.polygon, [*TREE_CONSTRAINTS, minor, important], "tree", 15
+        ):
+            if len(v.tradeoffs) > 1:
+                weights = [t.weight for t in v.tradeoffs]
+                assert weights == sorted(weights, reverse=True)
+
+    def test_a_hard_constraint_ignores_its_weight(self):
+        # Weight only ranks preferences; a rule that must hold is not traded off.
+        heavy = get_constraint("not-on-building").model_copy(update={"weight": 9.0})
+        variants = generate_points(STUDY_AREA.polygon, [heavy, *TREE_CONSTRAINTS], "tree", 10)
+        assert variants
+        for v in variants:
+            assert not has_hard_violation(v.findings)
+            assert all(t.constraint_id != "not-on-building" for t in v.tradeoffs)
+
     def test_tradeoffs_are_grouped_per_constraint_not_per_object(self):
         variants = generate_points(
             STUDY_AREA.polygon,

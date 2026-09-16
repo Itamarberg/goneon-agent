@@ -242,9 +242,11 @@ def _tradeoffs(
                 count=len(items),
                 worst_measured_m=worst,
                 required_m=required,
+                weight=soft[cid].weight,
             )
         )
-    return sorted(out, key=lambda t: -t.count)
+    # Heaviest compromise first: what the planner said matters most, broken most.
+    return sorted(out, key=lambda t: (-t.weight, -t.count))
 
 
 STRATEGIES = (

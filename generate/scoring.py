@@ -75,6 +75,10 @@ def cost_surface(
 
     Hard constraints are not included: they have already removed everything they
     forbid from the candidate set, so adding them here would double-count.
+
+    Each preference is multiplied by its weight, so a planner who marks one
+    constraint as more important than another gets a plan that reflects that
+    ranking — the hierarchy changes the geometry, it is not a label.
     """
     total = np.zeros(len(points), dtype=float)
     used: list[str] = []
@@ -84,7 +88,7 @@ def cost_surface(
         cost = constraint_cost(points, c, area_id)
         if cost is None:
             continue
-        total += cost
+        total += c.weight * cost
         used.append(c.id)
     return total, used
 

@@ -71,6 +71,16 @@ class Constraint(Base):
     )
     params: dict[str, float] = Field(default_factory=dict)
     hard: bool = True
+    weight: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=10.0,
+        description=(
+            "How much this preference counts against the others when a plan cannot "
+            "satisfy them all. Only meaningful when hard is false: a hard constraint "
+            "is not traded off. 1.0 is normal."
+        ),
+    )
     source: Source
     verified: bool = False
     note: str | None = Field(
@@ -159,6 +169,7 @@ class Tradeoff(Base):
     count: int  # objects that fall short of the soft constraint
     worst_measured_m: float | None = None
     required_m: float | None = None
+    weight: float = 1.0  # the importance the planner gave it
 
 
 class Variant(Base):
