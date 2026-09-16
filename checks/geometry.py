@@ -64,3 +64,40 @@ def connecting_line(a: BaseGeometry, b: BaseGeometry) -> dict | None:
         return None
     line = shortest_line(a, b)
     return None if line is None else line.__geo_interface__
+
+
+def nearest_distances(points, layer: str):
+    """Distance from each point to the nearest feature of a layer, vectorised.
+
+    Uses the layer's STRtree rather than the distance to the merged union:
+    measuring against one multipolygon costs O(all vertices) per point, while a
+    nearest-neighbour query costs O(log n). On 170k candidates against the
+    pavement layer that is the difference between seconds and milliseconds.
+    """
+    import numpy as np
+    import shapely
+
+    from data.store import _index
+
+    tree, _features, geoms = _index(layer)
+    if not geoms:
+        return np.full(len(points), np.inf)
+    pts = shapely.points(points[:, 0], points[:, 1])
+    _idx, distances = tree.query_nearest(pts, return_distance=True, all_matches=False)
+    return distances
+
+
+def contains_mask(points, layer: str):
+    """True where a point falls inside the layer's polygons.
+
+    A prepared containment test, which is far cheaper than asking for a distance
+    when the answer only needs to be inside/outside.
+    """
+    import numpy as np
+    import shapely
+
+    union = layer_union(layer)
+    if union.is_empty:
+        return np.zeros(len(points), dtype=bool)
+    shapely.prepare(union)
+    return shapely.contains_xy(union, points[:, 0], points[:, 1])

@@ -19,7 +19,10 @@ from checks.zones import compute_zones, zones_as_geojson
 from data.store import LayerNotAvailable, get_features_in, list_layers, study_area_summary
 from data.study_area import STUDY_AREA
 from domain.crs import to_wgs84
-from domain.models import CRS_WGS84, Constraint, Feature, Geometry
+from domain.models import CRS_WGS84, Constraint, Feature, Geometry, ObjectSpec, Variant
+from generate.infeasible import explain_for_line, explain_for_points
+from generate.line import generate_line
+from generate.points import generate_points
 
 VERSION = "0.1.0"
 
@@ -175,4 +178,65 @@ def check(request: CheckRequest) -> dict:
             {"id": c.id, "description": describe(c), "evaluable": unevaluable_reason(c) is None}
             for c in request.constraints
         ],
+    }
+
+
+class GenerateRequest(BaseModel):
+    """Step 4: constraints in, plan variants out."""
+
+    area: Geometry | None = Field(default=None, description="Polygon in EPSG:2056.")
+    object: ObjectSpec
+    constraints: list[Constraint] = Field(default_factory=list)
+
+
+def _variant_for_map(variant: Variant) -> dict:
+    """A variant with every geometry reprojected for the browser."""
+    data = variant.model_dump()
+    for feature in data["features"]:
+        feature["geometry"] = to_wgs84(feature["geometry"])
+    for finding in data["findings"]:
+        if finding.get("geometry"):
+            finding["geometry"] = to_wgs84(finding["geometry"])
+    return data
+
+
+@app.post("/api/generate")
+def generate(request: GenerateRequest) -> dict:
+    """Generate plan variants, or explain why none exist.
+
+    An empty result is never returned on its own: if nothing can be placed, the
+    response carries which hard constraint blocks it and what relaxing it would
+    give, because "not possible" alone is not decision support.
+    """
+    area = request.area or STUDY_AREA.polygon
+    spec = request.object
+
+    if spec.geometry == "point":
+        variants = generate_points(
+            area,
+            request.constraints,
+            object_kind=spec.kind,
+            target_count=spec.count,
+            spacing_m=spec.spacing_m,
+        )
+        if not variants:
+            report = explain_for_points(area, request.constraints, spec.count, spec.spacing_m)
+            return {"variants": [], "infeasibility": report.model_dump()}
+    else:
+        if not spec.start or not spec.end:
+            raise HTTPException(status_code=422, detail="a line needs a start and an end")
+        variants = generate_line(
+            area,
+            request.constraints,
+            tuple(spec.start),
+            tuple(spec.end),
+            object_kind=spec.kind,
+        )
+        if not variants:
+            report = explain_for_line(area, request.constraints, tuple(spec.start), tuple(spec.end))
+            return {"variants": [], "infeasibility": report.model_dump()}
+
+    return {
+        "variants": [_variant_for_map(v) for v in variants],
+        "infeasibility": None,
     }
