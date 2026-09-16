@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>neon-agent</title>
+<style>
+  :root { color-scheme: light dark; --fg: #14181d; --bg: #fbfbfa; --muted: #5d6771; --line: #e3e3e0; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e8e8e6; --bg: #17181a; --muted: #9aa3ab; --line: #2c2e31; }
+  }
+  body { margin: 0; padding: 48px 16px; background: var(--bg); color: var(--fg);
+         font: 16px/1.55 ui-sans-serif, -apple-system, system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  p.sub { color: var(--muted); margin: 0 0 32px; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.ok { background: #1f9d55; } .dot.bad { background: #c0392b; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+         color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>neon-agent</h1>
+  <p class="sub">Infrastructure planning on real open data. Skeleton — the map and
+     planner UI arrive in a later step.</p>
+  <div class="card">
+    <div class="row"><span class="dot" id="dot"></span><strong id="state">Checking API…</strong></div>
+    <p style="margin:10px 0 0"><code id="detail"></code></p>
+  </div>
+</main>
+<script src="config.js"></script>
+<script>
+  const dot = document.getElementById("dot");
+  const state = document.getElementById("state");
+  const detail = document.getElementById("detail");
+  const url = window.NEON_API_BASE + "/api/health";
+
+  fetch(url)
+    .then((r) => r.json())
+    .then((d) => {
+      dot.className = "dot ok";
+      state.textContent = "API reachable";
+      detail.textContent = `${url} → ${d.service} ${d.version} (${d.status})`;
+    })
+    .catch((e) => {
+      dot.className = "dot bad";
+      state.textContent = "API unreachable";
+      detail.textContent = `${url} → ${e}`;
+    });
+</script>
+</body>
+</html>

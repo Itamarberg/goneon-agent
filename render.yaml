@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: neon-agent-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      # The Vercel origin of the static site.
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # Only the API holds the key; the browser never sees it.
+      - key: ANTHROPIC_API_KEY
+        sync: false
