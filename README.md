@@ -112,9 +112,16 @@ verified: false             # true only once the source sentence is quoted
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.
 
 ```sh
+uv sync --extra agent --extra mcp    # install
+./scripts/dev.sh                     # starts both servers, prints the URL
+```
+
+`dev.sh` runs the API and the static site together and tells you whether chat
+found credentials. Or run them yourself:
+
+```sh
 uv sync                                   # geometry only — no API key needed
-uv sync --extra agent --extra mcp         # plus the agent and MCP
-uv run --group dev pytest                 # 98 tests
+uv run --group dev pytest                 # 102 tests
 uv run uvicorn api.main:app --reload      # API  on http://127.0.0.1:8000
 python3 -m http.server -d web 5173        # SITE on http://127.0.0.1:5173  <- open this
 ```
