@@ -1,13 +1,15 @@
 # neon-agent
 
-Decision support for infrastructure planners. Draw a proposal, such as trees,
-sewers or power lines, and the agent checks it against cited rules and the
-existing context: underground utilities, buildings and terrain. It explains
-conflicts and offers trade-offs. Planners make the decisions.
+A planning website for planners from any field. Pick an area of Zurich, say what
+you want to place (trees, bike racks, a cable, a power line), and choose the
+constraints it must respect, from a catalog of cited rules or in your own words.
+The agent turns that into a planning request, deterministic generators produce
+plan variants on real open data, and every variant is checked against your
+constraints. You compare, edit and decide.
 
 **Status:** planning. No code yet.
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — the design
-- [docs/PLAN.md](docs/PLAN.md) — scope decisions and schedule
-- [docs/plan/](docs/plan/) — engineering, domain, product and submission plans
+- [docs/PLAN.md](docs/PLAN.md) — product, generation approach, data, build plan, decision log
+- [ARCHITECTURE.md](ARCHITECTURE.md) — components and contracts
 - [docs/adr/](docs/adr/) — architecture decisions
+- [docs/plan/04-submission.md](docs/plan/04-submission.md) — timeline message, video scripts
