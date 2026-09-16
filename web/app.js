@@ -30,6 +30,7 @@ const state = {
   end: null,
   picked: [],
   constraints: new Map(), // id -> { constraint, hard, weight }
+  dismissed: new Set(), // default-on rules the planner has taken off, kept off
   catalog: [],
   variants: [],
   selectedVariant: null,
@@ -280,11 +281,24 @@ async function selectArea(areaId) {
 
   const catalog = await api(`/api/catalog?area_id=${areaId}`);
   state.catalog = catalog.constraints;
+  applyDefaultRules();
   renderCatalog();
+  refreshZones();
   refreshSummaries();
 }
 
 /* -------------------------------------------------------------- step 3 ---- */
+
+/* Geometric sanity (not inside a building, not in water) starts ticked: a
+ * planner should never see trees in the Limmat because they did not think to
+ * forbid it. Untick it and it stays off until "Start over". */
+function applyDefaultRules() {
+  for (const c of state.catalog) {
+    if (!c.default_on || state.constraints.has(c.id) || state.dismissed.has(c.id)) continue;
+    if (c.applies_to && c.applies_to !== state.objectKind) continue;
+    state.constraints.set(c.id, { constraint: c, hard: c.hard, weight: 1 });
+  }
+}
 
 function renderCatalog() {
   const host = $("catalog");
@@ -355,8 +369,10 @@ function ruleRow(c) {
   box.addEventListener("change", () => {
     if (box.checked) {
       state.constraints.set(c.id, { constraint: c, hard: c.hard, weight: 1 });
+      state.dismissed.delete(c.id);
     } else {
       state.constraints.delete(c.id);
+      state.dismissed.add(c.id);
     }
     sync();
     refreshZones();
@@ -676,6 +692,7 @@ async function resetAll() {
   state.start = state.end = null;
   state.picked = [];
   state.constraints.clear();
+  state.dismissed.clear();
   state.variants = [];
   state.selectedVariant = null;
   state.drawing = null;
