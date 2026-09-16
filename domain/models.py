@@ -70,7 +70,14 @@ class Constraint(Base):
         default=None, description="Data layer it measures against. None for min_spacing."
     )
     params: dict[str, float] = Field(default_factory=dict)
-    hard: bool = True
+    hard: bool = Field(
+        default=True,
+        description=(
+            "A hard rule is a regulation or a physical impossibility: it removes ground from "
+            "the map and starts selected for every plan. A soft rule is a preference the "
+            "planner ranks by weight."
+        ),
+    )
     weight: float = Field(
         default=1.0,
         ge=0.1,
@@ -83,14 +90,6 @@ class Constraint(Base):
     )
     source: Source
     verified: bool = False
-    default_on: bool = Field(
-        default=False,
-        description=(
-            "Pre-selected when a planner starts. Reserved for geometric sanity that holds for "
-            "any object in any project (not inside a building, not in water); everything "
-            "else is a decision the planner should take deliberately."
-        ),
-    )
     note: str | None = Field(
         default=None,
         description="Caveat shown next to the constraint, e.g. a proxy for a real calculation.",

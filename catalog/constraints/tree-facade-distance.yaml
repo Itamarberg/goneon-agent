@@ -1,0 +1,13 @@
+id: tree-facade-distance
+title: Tree keeps 4 m from a facade
+type: min_distance
+applies_to: tree
+layer: building
+params:
+  d_m: 4.0
+hard: false
+source:
+  text: "Planning convention: a street tree needs root and crown space clear of the facade; Grün Stadt Zürich plants at 4 m or more."
+  kind: convention
+verified: false
+note: "Distance to the nearest building footprint. Weighted preference, not a rule."

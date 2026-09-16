@@ -105,21 +105,27 @@ def test_ids_match_file_names():
         assert raw["id"] == path.stem
 
 
-def test_default_on_is_reserved_for_geometric_sanity_that_holds_everywhere():
-    # A rule that starts ticked is one the planner never chose. That is only
-    # defensible for physical impossibilities: it must be hard, apply to any
-    # object, and be checkable in every study area — a default that silently
-    # cannot be evaluated somewhere would be a false sense of safety.
-    from data.sources import BY_NAME
+def test_every_hard_rule_is_a_regulation_or_an_impossibility_and_says_when_it_cannot_check():
+    # Hard rules start selected for every plan, so the planner never chose them.
+    # Each must therefore either be checkable in every study area or carry a
+    # reason the tool can show — a silent pass would be a false sense of safety.
+    from data.sources import UNAVAILABLE_LAYERS
     from data.study_area import STUDY_AREAS
 
-    defaults = [c for c in load_catalog() if c.default_on]
-    assert {c.id for c in defaults} == {"not-on-building", "not-in-water"}
-    for c in defaults:
-        assert c.hard, f"{c.id}: a default must be a hard rule"
-        assert c.applies_to is None, f"{c.id}: a default must apply to any object"
-        assert c.type == "not_within", f"{c.id}: a default excludes ground, nothing more"
-        assert c.source.kind == "convention"
-        assert c.layer in BY_NAME
+    hard = [c for c in load_catalog() if c.hard]
+    assert {"not-on-building", "not-in-water"} <= {c.id for c in hard}
+    for c in hard:
         for area_id in STUDY_AREAS:
-            assert unevaluable_reason(c, area_id) is None, f"{c.id} not checkable in {area_id}"
+            reason = unevaluable_reason(c, area_id)
+            if reason is not None:
+                assert c.layer in UNAVAILABLE_LAYERS, f"{c.id}: unexplained gap in {area_id}"
+
+
+def test_every_point_kind_has_preferences_the_planner_can_rank():
+    # Importance only means something when there is more than one preference
+    # competing for the same ground.
+    for kind in ("tree", "bike_rack", "bench", "charging_station"):
+        soft = [c for c in for_object_kind(kind) if not c.hard]
+        assert len(soft) >= 2, f"{kind}: {[c.id for c in soft]}"
+        for c in soft:
+            assert c.source.kind == "convention" or c.verified, c.id

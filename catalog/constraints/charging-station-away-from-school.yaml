@@ -1,0 +1,12 @@
+id: charging-station-away-from-school
+title: Charging station keeps 50 m from a school
+type: min_distance
+applies_to: charging_station
+layer: school
+params:
+  d_m: 50.0
+hard: false
+source:
+  text: "Planning convention: car traffic is kept away from school gates."
+  kind: convention
+verified: true

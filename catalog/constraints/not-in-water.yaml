@@ -3,7 +3,6 @@ title: Object is not in water
 type: not_within
 layer: water
 hard: true
-default_on: true
 source:
   text: "Geometric sanity: an object cannot stand in the Limmat, the Sihl or a pond."
   kind: convention

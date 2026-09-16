@@ -1,0 +1,12 @@
+id: bike-rack-near-school
+title: Bike racks stay within 100 m of a school
+type: max_distance
+applies_to: bike_rack
+layer: school
+params:
+  d_m: 100.0
+hard: false
+source:
+  text: "Planning convention: pupils cycle; racks at the gate keep bikes off the pavement."
+  kind: convention
+verified: true
