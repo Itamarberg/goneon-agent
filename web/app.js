@@ -1,29 +1,41 @@
 /* neon-agent — the planner's page.
  *
  * All planning logic lives in the API. This file keeps the plan state, draws it,
- * and calls six endpoints. It holds no thresholds and computes no verdicts: a
- * number shown here came back from a tool (ADR 0001).
+ * and calls the endpoints. It holds no thresholds and computes no verdicts: every
+ * number it shows came back from a tool (ADR 0001).
  *
  * There is no server session, so this state *is* the plan (docs/PLAN.md §7).
  */
 
 const API = window.NEON_API_BASE;
 
+// Importance, as a planner would say it, mapped to the weight the generator uses.
+// A preference marked "critical" outweighs three normal ones when they conflict.
+const IMPORTANCE = [
+  { label: "nice to have", weight: 0.3 },
+  { label: "normal", weight: 1 },
+  { label: "important", weight: 3 },
+  { label: "critical", weight: 8 },
+];
+
 const state = {
-  area: null, // null = the whole study area
-  areaPolygon: null, // LV95 polygon when the planner picked one
-  geometry: "point", // point | line
+  areaId: null,
+  areas: [],
+  areaPolygon: null, // set only when the planner narrows the quarter down
+  areaCorner: null,
+  geometry: "point",
   objectKind: "tree",
   count: 20,
   start: null,
   end: null,
-  picked: [], // the map clicks behind start/end, kept for redrawing
-  constraints: new Map(), // id -> {constraint, hard}
+  picked: [],
+  constraints: new Map(), // id -> { constraint, hard, weight }
   catalog: [],
   variants: [],
   selectedVariant: null,
-  drawing: null, // "area" | "line" | null
+  drawing: null,
   chat: [],
+  step: 1,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -36,7 +48,11 @@ const api = async (path, options) => {
   return r.json();
 };
 const post = (path, body) =>
-  api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  api(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 
 /* ------------------------------------------------------------------ map --- */
 
@@ -77,59 +93,60 @@ const EMPTY = { type: "FeatureCollection", features: [] };
 const setData = (id, data) => map.getSource(id) && map.getSource(id).setData(data || EMPTY);
 
 function addOverlaySources() {
-  // Drawn on top of the data layers: what the constraints forbid, what they
-  // leave, the chosen plan, and anything a check flagged.
-  for (const id of ["zone-forbidden", "zone-allowed", "plan", "findings", "picked"]) {
+  for (const id of ["zone-forbidden", "zone-allowed", "plan", "findings", "picked", "study-area"]) {
     map.addSource(id, { type: "geojson", data: EMPTY });
   }
-  map.addLayer({
-    id: "zone-allowed-fill", type: "fill", source: "zone-allowed",
-    paint: { "fill-color": "#1f9d55", "fill-opacity": 0.14 },
-  });
-  map.addLayer({
-    id: "zone-forbidden-fill", type: "fill", source: "zone-forbidden",
-    paint: { "fill-color": "#c0392b", "fill-opacity": 0.18 },
-  });
-  map.addLayer({
-    id: "plan-line", type: "line", source: "plan",
-    paint: { "line-color": "#1f6feb", "line-width": 4 },
-  });
-  map.addLayer({
-    id: "plan-point", type: "circle", source: "plan",
+  map.addLayer({ id: "zone-allowed-fill", type: "fill", source: "zone-allowed",
+    paint: { "fill-color": "#1f9d55", "fill-opacity": 0.14 } });
+  map.addLayer({ id: "zone-forbidden-fill", type: "fill", source: "zone-forbidden",
+    paint: { "fill-color": "#c0392b", "fill-opacity": 0.18 } });
+  map.addLayer({ id: "study-area-line", type: "line", source: "study-area",
+    paint: { "line-color": "#1f6feb", "line-width": 1.5, "line-dasharray": [3, 2] } });
+  map.addLayer({ id: "plan-line", type: "line", source: "plan",
+    paint: { "line-color": "#1f6feb", "line-width": 4 } });
+  map.addLayer({ id: "plan-point", type: "circle", source: "plan",
     filter: ["==", ["geometry-type"], "Point"],
-    paint: {
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 4, 18, 8],
-      "circle-color": "#1f6feb", "circle-stroke-width": 2, "circle-stroke-color": "#fff",
-    },
-  });
-  map.addLayer({
-    id: "findings-line", type: "line", source: "findings",
-    paint: { "line-color": "#c0392b", "line-width": 2, "line-dasharray": [2, 1] },
-  });
-  map.addLayer({
-    id: "picked-point", type: "circle", source: "picked",
+    paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 4, 18, 8],
+             "circle-color": "#1f6feb", "circle-stroke-width": 2, "circle-stroke-color": "#fff" } });
+  map.addLayer({ id: "findings-line", type: "line", source: "findings",
+    paint: { "line-color": "#c0392b", "line-width": 2, "line-dasharray": [2, 1] } });
+  map.addLayer({ id: "picked-point", type: "circle", source: "picked",
     paint: { "circle-radius": 6, "circle-color": "#ffb703", "circle-stroke-width": 2,
-             "circle-stroke-color": "#fff" },
-  });
+             "circle-stroke-color": "#fff" } });
+}
+
+// Data layers belong to a study area, so they are torn down and rebuilt on switch.
+let dataLayerIds = [];
+function clearDataLayers() {
+  for (const id of dataLayerIds) if (map.getLayer(id)) map.removeLayer(id);
+  for (const name of new Set(dataLayerIds.map((id) => id.replace(/-(fill|line|point)$/, "")))) {
+    if (map.getSource(name)) map.removeSource(name);
+  }
+  dataLayerIds = [];
+  $("layers").innerHTML = "";
 }
 
 function addDataLayer(info) {
   const colour = LAYER_STYLE[info.name] || "#888";
   const visible = LAYERS_ON.includes(info.name);
   const vis = { visibility: visible ? "visible" : "none" };
-  map.addSource(info.name, { type: "geojson", data: `${API}/api/layers/${info.name}` });
+  const url = `${API}/api/layers/${info.name}?area_id=${state.areaId}`;
+  map.addSource(info.name, { type: "geojson", data: url });
 
+  const add = (suffix, spec) => {
+    const id = info.name + suffix;
+    map.addLayer({ id, source: info.name, layout: vis, ...spec }, "zone-allowed-fill");
+    dataLayerIds.push(id);
+  };
   if (info.geometry_type === "Polygon") {
-    map.addLayer({ id: `${info.name}-fill`, type: "fill", source: info.name, layout: vis,
-      paint: { "fill-color": colour, "fill-opacity": 0.4 } }, "zone-allowed-fill");
+    add("-fill", { type: "fill", paint: { "fill-color": colour, "fill-opacity": 0.4 } });
   } else if (info.geometry_type === "LineString") {
-    map.addLayer({ id: `${info.name}-line`, type: "line", source: info.name, layout: vis,
-      paint: { "line-color": colour, "line-width": 3 } }, "zone-allowed-fill");
+    add("-line", { type: "line", paint: { "line-color": colour, "line-width": 3 } });
   } else {
-    map.addLayer({ id: `${info.name}-point`, type: "circle", source: info.name, layout: vis,
+    add("-point", { type: "circle",
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 2.5, 18, 5.5],
                "circle-color": colour, "circle-stroke-width": 1,
-               "circle-stroke-color": "rgba(255,255,255,.75)" } }, "zone-allowed-fill");
+               "circle-stroke-color": "rgba(255,255,255,.75)" } });
   }
 
   const row = document.createElement("label");
@@ -148,68 +165,216 @@ function addDataLayer(info) {
   $("layers").append(row);
 }
 
-/* ------------------------------------------------------------- constraints - */
+/* ------------------------------------------------------------- the steps -- */
+
+function openStep(n) {
+  state.step = n;
+  for (const section of document.querySelectorAll(".step")) {
+    section.dataset.open = String(Number(section.dataset.step) === n);
+  }
+  const open = document.querySelector('.step[data-open="true"]');
+  if (open) open.scrollIntoView({ block: "nearest" });
+  refreshSummaries();
+}
+
+function refreshSummaries() {
+  const area = state.areas.find((a) => a.id === state.areaId);
+  const summaries = {
+    1: area ? area.title + (state.areaPolygon ? " · part of it" : "") : "",
+    2: state.geometry === "point"
+      ? `${state.count} × ${labelFor(state.objectKind)}`
+      : `${labelFor(state.objectKind)}${state.start && state.end ? "" : " — set endpoints"}`,
+    3: state.constraints.size
+      ? `${[...state.constraints.values()].filter((c) => c.hard).length} must hold, ` +
+        `${[...state.constraints.values()].filter((c) => !c.hard).length} preferred`
+      : "none yet",
+    4: state.variants.length ? `${state.variants.length} variants` : "",
+    5: state.selectedVariant ? state.selectedVariant.label : "",
+  };
+  const done = {
+    1: Boolean(state.areaId),
+    2: state.geometry === "point" ? Boolean(state.count) : Boolean(state.start && state.end),
+    3: state.constraints.size > 0,
+    4: state.variants.length > 0,
+    5: Boolean(state.selectedVariant),
+  };
+  for (const section of document.querySelectorAll(".step")) {
+    const n = Number(section.dataset.step);
+    section.querySelector(".step-summary").textContent = summaries[n] || "";
+    section.dataset.done = String(Boolean(done[n]));
+  }
+  $("generate").disabled = state.geometry === "line" && !(state.start && state.end);
+}
+
+const labelFor = (kind) =>
+  ({ tree: "street trees", bike_rack: "bike racks", bench: "benches",
+     charging_station: "charging stations", power_line: "power line", pipe: "pipe",
+     path: "path" }[kind] || kind);
+
+/* -------------------------------------------------------------- step 1 ---- */
+
+function renderAreas() {
+  const host = $("area-list");
+  host.innerHTML = "";
+  for (const area of state.areas) {
+    const el = document.createElement("button");
+    el.className = "card";
+    el.dataset.active = String(area.id === state.areaId);
+    el.innerHTML = `<strong>${area.title}</strong>
+      <span>${area.description}</span>
+      <span class="districts">${area.districts.map((d) => `${d.name} ${Math.round(d.share_pct)}%`).join(" · ")}</span>`;
+    el.addEventListener("click", () => selectArea(area.id));
+    host.append(el);
+  }
+}
+
+async function selectArea(areaId) {
+  if (state.areaId === areaId) return;
+  state.areaId = areaId;
+  // Switching the quarter invalidates everything downstream.
+  state.areaPolygon = null;
+  state.variants = [];
+  state.selectedVariant = null;
+  state.constraints.clear();
+  setData("plan", null);
+  setData("findings", null);
+  setData("zone-forbidden", null);
+  setData("zone-allowed", null);
+  $("variants").innerHTML = "";
+  $("infeasible").hidden = true;
+  $("area-reset").hidden = true;
+  $("area-hint").textContent = "";
+  setExportEnabled(false);
+  renderAreas();
+
+  const area = await api(`/api/area?area_id=${areaId}`);
+  const ring = area.polygon_wgs84.coordinates[0];
+  map.fitBounds(ring.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(ring[0], ring[0])),
+    { padding: 30, duration: 600 });
+  setData("study-area", area.polygon_wgs84);
+
+  clearDataLayers();
+  for (const info of area.layers) addDataLayer(info);
+  $("area-counts").innerHTML = area.layers
+    .map((l) => `<span class="count-chip"><b>${l.feature_count}</b> ${l.title.toLowerCase()}</span>`)
+    .join("");
+  $("gaps").innerHTML = area.unavailable_layers
+    .map((g) => `<li><b>${g.name}</b> — ${g.reason}</li>`).join("");
+
+  const catalog = await api(`/api/catalog?area_id=${areaId}`);
+  state.catalog = catalog.constraints;
+  renderCatalog();
+  refreshSummaries();
+}
+
+/* -------------------------------------------------------------- step 3 ---- */
 
 function renderCatalog() {
   const host = $("catalog");
   host.innerHTML = "";
-  const relevant = state.catalog.filter(
-    (c) => !c.applies_to || c.applies_to === state.objectKind,
-  );
-
-  for (const c of relevant) {
-    const chosen = state.constraints.get(c.id);
-    const el = document.createElement("div");
-    el.className = "rule";
-    el.dataset.on = String(Boolean(chosen));
-
-    const kind = c.source.kind;
-    const badge = !c.evaluable
-      ? `<span class="badge blocked" title="${c.not_evaluable_reason}">cannot be checked</span>`
-      : `<span class="badge ${kind}">${kind}</span>`;
-    const hard = chosen ? chosen.hard : c.hard;
-
-    el.innerHTML = `
-      <div class="rule-top">
-        <input type="checkbox" ${chosen ? "checked" : ""}>
-        <div style="flex:1">
-          <div class="rule-title">${c.title}</div>
-          <div class="rule-desc">${c.description}</div>
-          <div class="rule-meta">
-            ${badge}
-            <button class="hardness">${hard ? "must hold" : "preference"}</button>
-            ${c.verified ? "" : '<span class="badge" title="The source sentence has not been quoted yet">draft</span>'}
-          </div>
-          <div class="source">${c.source.url ? `<a href="${c.source.url}" target="_blank" rel="noopener">${c.source.text}</a>` : c.source.text}</div>
-          ${c.note ? `<div class="source">${c.note}</div>` : ""}
-          ${!c.evaluable ? `<div class="blocked-note">${c.not_evaluable_reason}</div>` : ""}
-        </div>
-      </div>`;
-
-    el.querySelector("input").addEventListener("change", (e) => {
-      if (e.target.checked) state.constraints.set(c.id, { constraint: c, hard });
-      else state.constraints.delete(c.id);
-      renderCatalog();
-      refreshZones();
-    });
-    // Hard vs soft is the planner's call, not the catalog's: the same rule is a
-    // requirement in one project and a preference in another.
-    el.querySelector(".hardness").addEventListener("click", () => {
-      const entry = state.constraints.get(c.id);
-      if (!entry) return;
-      entry.hard = !entry.hard;
-      renderCatalog();
-      refreshZones();
-    });
-    host.append(el);
+  const relevant = state.catalog.filter((c) => !c.applies_to || c.applies_to === state.objectKind);
+  if (!relevant.length) {
+    host.innerHTML = '<p class="hint">No curated constraints for this object kind yet. ' +
+      'Describe your own rule in the chat and the agent will draft it.</p>';
+    return;
   }
-  markSteps();
+  for (const c of relevant) host.append(ruleRow(c));
+  refreshSummaries();
+}
+
+/* One constraint row. It updates itself in place rather than re-rendering the
+ * whole catalog: a planner ticking six constraints in a row should not have the
+ * list rebuilt under the cursor, losing scroll position and closing dropdowns. */
+function ruleRow(c) {
+  const chosen = state.constraints.get(c.id);
+  const el = document.createElement("div");
+  el.className = "rule";
+  el.innerHTML = `
+    <div class="rule-top">
+      <input type="checkbox">
+      <div style="flex:1">
+        <div class="rule-title">${c.title}</div>
+        <div class="rule-desc">${c.description}</div>
+        <div class="rule-controls">
+          <div class="segmented">
+            <button type="button" data-hard="true">must hold</button>
+            <button type="button" data-hard="false">preference</button>
+          </div>
+          <label class="importance">importance
+            <select>${IMPORTANCE.map((i) =>
+              `<option value="${i.weight}">${i.label}</option>`).join("")}</select>
+          </label>
+        </div>
+        <div class="source">
+          <span class="badge ${c.evaluable ? c.source.kind : "blocked"}">${
+            c.evaluable ? c.source.kind : "cannot be checked"}</span>
+          ${c.source.url
+            ? `<a href="${c.source.url}" target="_blank" rel="noopener">${c.source.text}</a>`
+            : c.source.text}
+        </div>
+        ${c.note ? `<div class="source">${c.note}</div>` : ""}
+        ${c.evaluable ? "" : `<div class="blocked-note">${c.not_evaluable_reason}</div>`}
+      </div>
+    </div>`;
+
+  const box = el.querySelector("input");
+  const importance = el.querySelector(".importance");
+  const select = el.querySelector(".importance select");
+
+  const sync = () => {
+    const entry = state.constraints.get(c.id);
+    el.dataset.on = String(Boolean(entry));
+    box.checked = Boolean(entry);
+    const hard = entry ? entry.hard : c.hard;
+    for (const b of el.querySelectorAll(".segmented button")) {
+      b.dataset.on = String((b.dataset.hard === "true") === hard);
+    }
+    // Importance only means something for a preference: a rule that must hold
+    // is not traded off against anything.
+    importance.hidden = hard;
+    select.value = String(entry ? entry.weight : 1);
+  };
+
+  box.addEventListener("change", () => {
+    if (box.checked) {
+      state.constraints.set(c.id, { constraint: c, hard: c.hard, weight: 1 });
+    } else {
+      state.constraints.delete(c.id);
+    }
+    sync();
+    refreshZones();
+    refreshSummaries();
+  });
+
+  // Hard vs soft is the planner's call, not the catalog's: the same rule is a
+  // requirement in one project and a preference in another.
+  for (const button of el.querySelectorAll(".segmented button")) {
+    button.addEventListener("click", () => {
+      const entry = state.constraints.get(c.id) ||
+        { constraint: c, hard: c.hard, weight: 1 };
+      entry.hard = button.dataset.hard === "true";
+      state.constraints.set(c.id, entry);
+      sync();
+      refreshZones();
+      refreshSummaries();
+    });
+  }
+
+  select.addEventListener("change", () => {
+    const entry = state.constraints.get(c.id);
+    if (!entry) return;
+    entry.weight = Number(select.value);
+    refreshSummaries();
+  });
+
+  sync();
+  return el;
 }
 
 function chosenConstraints() {
-  return [...state.constraints.values()].map(({ constraint, hard }) => {
+  return [...state.constraints.values()].map(({ constraint, hard, weight }) => {
     const { description, evaluable, not_evaluable_reason, ...rest } = constraint;
-    return { ...rest, hard };
+    return { ...rest, hard, weight };
   });
 }
 
@@ -226,7 +391,9 @@ async function refreshZones() {
   const ticket = ++zoneRequest;
   summary.textContent = "Computing…";
   try {
-    const zones = await post("/api/zones", { area: state.areaPolygon, constraints });
+    const zones = await post("/api/zones", {
+      area: state.areaPolygon, area_id: state.areaId, constraints,
+    });
     if (ticket !== zoneRequest) return; // a newer tick won
     setData("zone-forbidden", zones.forbidden);
     setData("zone-allowed", zones.allowed);
@@ -235,14 +402,14 @@ async function refreshZones() {
     summary.innerHTML = `
       <div class="bar"><i style="width:${share}%"></i></div>
       <b>${zones.allowed_area_m2.toLocaleString()} m²</b> available — ${share}% of the area.
-      ${skipped.length ? `<div class="hint">Not shown as a zone: ${skipped
+      ${skipped.length ? `<div class="hint" style="margin-top:6px">Not shown as a zone: ${skipped
         .map(([id, why]) => `${id} (${why})`).join("; ")}</div>` : ""}`;
   } catch (e) {
     if (ticket === zoneRequest) summary.textContent = `Could not compute zones: ${e.message}`;
   }
 }
 
-/* --------------------------------------------------------------- generate - */
+/* -------------------------------------------------------------- step 4 ---- */
 
 async function generate() {
   const button = $("generate");
@@ -253,10 +420,8 @@ async function generate() {
     const spec = state.geometry === "point"
       ? { kind: state.objectKind, geometry: "point", count: Number(state.count) }
       : { kind: state.objectKind, geometry: "line", start: state.start, end: state.end };
-
     const result = await post("/api/generate", {
-      area: state.areaPolygon,
-      object: spec,
+      area: state.areaPolygon, area_id: state.areaId, object: spec,
       constraints: chosenConstraints(),
     });
     state.variants = result.variants;
@@ -272,13 +437,13 @@ async function generate() {
 function renderVariants(result) {
   const host = $("variants");
   host.innerHTML = "";
-
   if (result.infeasibility) {
     renderInfeasible(result.infeasibility);
     setData("plan", null);
     setData("findings", null);
     state.selectedVariant = null;
     setExportEnabled(false);
+    refreshSummaries();
     return;
   }
   $("infeasible").hidden = true;
@@ -286,11 +451,11 @@ function renderVariants(result) {
   for (const v of result.variants) {
     const el = document.createElement("div");
     el.className = "variant";
+    el.dataset.variantId = v.id;
     const metrics = v.metrics.length_m
       ? `${Math.round(v.metrics.length_m)} m · ${v.metrics.vertices} points`
-      : `${v.features.length} objects`;
+      : `${v.features.length} objects · ${v.metrics.achieved_spacing_m} m apart`;
     const blocked = v.findings.filter((f) => f.severity === "not_evaluable");
-
     el.innerHTML = `
       <div class="variant-top">
         <span class="variant-label">${v.label}</span>
@@ -298,25 +463,33 @@ function renderVariants(result) {
       </div>
       ${v.tradeoffs.length
         ? v.tradeoffs.map((t) => `<div class="tradeoff">${t.count} × ${t.title}${
-            t.worst_measured_m != null ? ` — worst ${t.worst_measured_m} m (asked ${t.required_m} m)` : ""
-          }</div>`).join("")
+            tradeoffDetail(t)}<span class="w"> · ${importanceLabel(t.weight)}</span></div>`).join("")
         : '<div class="clean">Meets every constraint that could be checked.</div>'}
       ${blocked.map((f) => `<div class="blocked-note">${f.message}</div>`).join("")}`;
-
     el.addEventListener("click", () => selectVariant(v.id));
     host.append(el);
   }
   if (result.variants.length) selectVariant(result.variants[0].id);
-  markSteps();
+  refreshSummaries();
+}
+
+const importanceLabel = (w) =>
+  (IMPORTANCE.find((i) => i.weight === w) || { label: "normal" }).label;
+
+// A distance rule has a threshold to quote; a containment rule ("stands on
+// pavement") has none, and "asked 0 m" reads like a bug.
+function tradeoffDetail(t) {
+  if (t.worst_measured_m == null) return "";
+  if (!t.required_m) return ` — worst is ${t.worst_measured_m} m off`;
+  return ` — worst ${t.worst_measured_m} m (asked ${t.required_m} m)`;
 }
 
 function selectVariant(id) {
   const variant = state.variants.find((v) => v.id === id);
   if (!variant) return;
   state.selectedVariant = variant;
-
   for (const el of document.querySelectorAll(".variant")) {
-    el.dataset.active = String(el.querySelector(".variant-label").textContent === variant.label);
+    el.dataset.active = String(el.dataset.variantId === id);
   }
   setData("plan", {
     type: "FeatureCollection",
@@ -326,11 +499,11 @@ function selectVariant(id) {
   });
   setData("findings", {
     type: "FeatureCollection",
-    features: variant.findings
-      .filter((f) => f.geometry)
+    features: variant.findings.filter((f) => f.geometry)
       .map((f) => ({ type: "Feature", geometry: f.geometry, properties: { message: f.message } })),
   });
   setExportEnabled(true);
+  refreshSummaries();
 }
 
 function renderInfeasible(report) {
@@ -345,14 +518,12 @@ function renderInfeasible(report) {
       const gain = r.positions_gained != null ? ` — ${r.positions_gained} positions` : "";
       return `<li><b>${r.title}</b>: ${change}${gain}</li>`;
     });
-  box.innerHTML = `
-    <h4>No plan is possible here</h4>
-    <p>${report.reason}</p>
+  box.innerHTML = `<h4>No plan is possible here</h4><p>${report.reason}</p>
     ${items.length ? `<ul>${items.join("")}</ul>` : ""}`;
   $("variants").innerHTML = "";
 }
 
-/* ----------------------------------------------------------------- export - */
+/* -------------------------------------------------------------- step 5 ---- */
 
 function setExportEnabled(on) {
   $("export-geojson").disabled = !on;
@@ -372,49 +543,32 @@ function exportGeoJSON() {
   const v = state.selectedVariant;
   // The constraints travel with the plan: a GeoJSON of points says nothing about
   // what it was checked against.
-  download(
-    `neon-plan-${v.id}.geojson`,
-    JSON.stringify(
-      {
-        type: "FeatureCollection",
-        properties: {
-          variant: v.id,
-          label: v.label,
-          metrics: v.metrics,
-          constraints: chosenConstraints(),
-          findings: v.findings,
-          generated_by: "neon-agent",
-        },
-        features: v.features.map((f) => ({
-          type: "Feature", id: f.id, geometry: f.geometry, properties: f.properties,
-        })),
-      },
-      null,
-      2,
-    ),
-    "application/geo+json",
-  );
+  download(`neon-plan-${v.id}.geojson`, JSON.stringify({
+    type: "FeatureCollection",
+    properties: {
+      variant: v.id, label: v.label, metrics: v.metrics, study_area: state.areaId,
+      constraints: chosenConstraints(), findings: v.findings, generated_by: "neon-agent",
+    },
+    features: v.features.map((f) => ({
+      type: "Feature", id: f.id, geometry: f.geometry, properties: f.properties,
+    })),
+  }, null, 2), "application/geo+json");
 }
 
 function exportReport() {
   const v = state.selectedVariant;
-  const rules = chosenConstraints()
-    .map((c) => `- ${c.title} (${c.hard ? "must hold" : "preference"}) — source: ${c.source.text}`)
-    .join("\n");
-  const notEvaluable = v.findings
-    .filter((f) => f.severity === "not_evaluable")
-    .map((f) => `- ${f.constraint_id}: ${f.message}`)
-    .join("\n");
-  const tradeoffs = v.tradeoffs
-    .map((t) => `- ${t.count} × ${t.title} (worst ${t.worst_measured_m} m, asked ${t.required_m} m)`)
-    .join("\n");
+  const area = state.areas.find((a) => a.id === state.areaId);
+  const rules = chosenConstraints().map((c) =>
+    `- ${c.title} — ${c.hard ? "must hold" : `preference, ${importanceLabel(c.weight)}`}; source: ${c.source.text}`).join("\n");
+  const notEvaluable = v.findings.filter((f) => f.severity === "not_evaluable")
+    .map((f) => `- ${f.constraint_id}: ${f.message}`).join("\n");
+  const tradeoffs = v.tradeoffs.map((t) =>
+    `- ${t.count} × ${t.title} (worst ${t.worst_measured_m} m, asked ${t.required_m} m; ${importanceLabel(t.weight)})`).join("\n");
 
-  download(
-    `neon-report-${v.id}.md`,
-    `# Plan report — ${v.label}
+  download(`neon-report-${v.id}.md`, `# Plan report — ${v.label}
 
-Area: ${state.areaPolygon ? "planner-selected area" : "Zürich Kreis 5 (study area)"}
-Object: ${state.objectKind}
+Area: ${area ? area.title : state.areaId}${state.areaPolygon ? " (part of it)" : ""}
+Object: ${labelFor(state.objectKind)}
 Generated: ${new Date().toISOString()}
 
 ## Constraints applied
@@ -431,9 +585,7 @@ ${notEvaluable || "None."}
 
 This is decision support, not an approval. Every number above came from a
 deterministic check against open data; the sources are listed with each rule.
-`,
-    "text/markdown",
-  );
+`, "text/markdown");
 }
 
 /* ------------------------------------------------------------------- chat - */
@@ -460,39 +612,33 @@ async function sendChat(event) {
   input.value = "";
   addMessage("user", text);
   state.chat.push({ role: "user", content: text });
-
   try {
     const result = await post("/api/chat", {
       messages: state.chat,
       area: state.areaPolygon,
+      area_id: state.areaId,
       object: state.geometry === "point"
         ? { kind: state.objectKind, geometry: "point", count: Number(state.count) }
         : { kind: state.objectKind, geometry: "line", start: state.start, end: state.end },
       constraints: chosenConstraints(),
     });
     state.chat.push({ role: "assistant", content: result.reply });
-    addMessage(
-      "assistant",
-      result.reply,
-      result.tool_calls.length ? `tools: ${result.tool_calls.join(", ")}` : "",
-    );
+    addMessage("assistant", result.reply,
+      result.tool_calls.length ? `tools: ${result.tool_calls.join(", ")}` : "");
     for (const w of result.warnings) addMessage("error", w);
-
-    // Anything the agent generated goes on the map like a manual generation.
     if (result.variants.length) {
       state.variants = result.variants;
       renderVariants({ variants: result.variants, infeasibility: null });
+      openStep(4);
     }
     if (result.zones) {
       setData("zone-forbidden", result.zones.forbidden);
       setData("zone-allowed", result.zones.allowed);
     }
     for (const p of result.proposals) {
-      addMessage(
-        "assistant",
+      addMessage("assistant",
         `Proposed constraint (not applied until you confirm): ${p.proposal.title}` +
-          (p.problems.length ? `\n${p.problems.join("\n")}` : ""),
-      );
+          (p.problems.length ? `\n${p.problems.join("\n")}` : ""));
     }
   } catch (e) {
     addMessage("error", e.message);
@@ -501,50 +647,35 @@ async function sendChat(event) {
 
 /* ------------------------------------------------------------------- wire - */
 
-function markSteps() {
-  const done = {
-    1: true,
-    2: state.geometry === "point" ? Boolean(state.count) : Boolean(state.start && state.end),
-    3: state.constraints.size > 0,
-    4: state.variants.length > 0,
-    5: Boolean(state.selectedVariant),
-  };
-  for (const [step, isDone] of Object.entries(done)) {
-    document.querySelector(`.step[data-step="${step}"]`).dataset.done = String(isDone);
-  }
-  $("generate").disabled = state.geometry === "line" && !(state.start && state.end);
-}
-
 function wireControls() {
-  const pick = (a, b, value) => {
-    a.dataset.active = String(value);
-    b.dataset.active = String(!value);
-  };
+  for (const head of document.querySelectorAll(".step-head")) {
+    head.addEventListener("click", () =>
+      openStep(Number(head.closest(".step").dataset.step)));
+  }
+  for (const next of document.querySelectorAll(".next")) {
+    next.addEventListener("click", () =>
+      openStep(Math.min(5, Number(next.closest(".step").dataset.step) + 1)));
+  }
 
-  $("kind-point").addEventListener("click", () => {
-    state.geometry = "point";
-    state.objectKind = $("object-kind").value;
-    pick($("kind-point"), $("kind-line"), true);
-    $("point-options").hidden = false;
-    $("line-options").hidden = true;
-    state.drawing = null;
+  const pickKind = (isPoint) => {
+    state.geometry = isPoint ? "point" : "line";
+    state.objectKind = isPoint ? $("object-kind").value : $("line-kind").value;
+    $("kind-point").dataset.active = String(isPoint);
+    $("kind-line").dataset.active = String(!isPoint);
+    $("point-options").hidden = !isPoint;
+    $("line-options").hidden = isPoint;
+    state.drawing = isPoint ? null : "line";
+    if (!isPoint) {
+      state.start = state.end = null;
+      state.picked = [];
+      setData("picked", null);
+      $("line-endpoints").textContent = "Click the map to set the start.";
+    }
     renderCatalog();
     refreshZones();
-  });
-  $("kind-line").addEventListener("click", () => {
-    state.geometry = "line";
-    state.objectKind = $("line-kind").value;
-    pick($("kind-point"), $("kind-line"), false);
-    $("point-options").hidden = true;
-    $("line-options").hidden = false;
-    state.drawing = "line";
-    state.start = state.end = null;
-    state.picked = [];
-    setData("picked", null);
-    $("line-endpoints").textContent = "Click the map to set the start.";
-    renderCatalog();
-    refreshZones();
-  });
+  };
+  $("kind-point").addEventListener("click", () => pickKind(true));
+  $("kind-line").addEventListener("click", () => pickKind(false));
 
   $("object-kind").addEventListener("change", (e) => {
     state.objectKind = e.target.value;
@@ -556,21 +687,20 @@ function wireControls() {
   });
   $("object-count").addEventListener("change", (e) => {
     state.count = e.target.value;
-    markSteps();
+    refreshSummaries();
   });
 
-  $("area-whole").addEventListener("click", () => {
-    state.areaPolygon = null;
-    state.drawing = null;
-    pick($("area-whole"), $("area-draw"), true);
-    $("area-hint").textContent = "Zürich Kreis 5.";
-    refreshZones();
-  });
   $("area-draw").addEventListener("click", () => {
     state.drawing = "area";
     state.areaCorner = null;
-    pick($("area-whole"), $("area-draw"), false);
     $("area-hint").textContent = "Click two opposite corners on the map.";
+  });
+  $("area-reset").addEventListener("click", () => {
+    state.areaPolygon = null;
+    $("area-reset").hidden = true;
+    $("area-hint").textContent = "";
+    refreshZones();
+    refreshSummaries();
   });
 
   $("generate").addEventListener("click", generate);
@@ -594,6 +724,12 @@ async function toLV95(lngLat) {
   return [r.x, r.y];
 }
 
+const pointAt = (lngLat) => ({
+  type: "Feature",
+  geometry: { type: "Point", coordinates: [lngLat.lng, lngLat.lat] },
+  properties: {},
+});
+
 async function onMapClick(e) {
   if (!state.drawing) return;
   const xy = await toLV95(e.lngLat);
@@ -607,20 +743,19 @@ async function onMapClick(e) {
     }
     const [x1, y1] = state.areaCorner;
     const [x2, y2] = xy;
-    state.areaPolygon = {
-      type: "Polygon",
-      coordinates: [[
-        [Math.min(x1, x2), Math.min(y1, y2)], [Math.max(x1, x2), Math.min(y1, y2)],
-        [Math.max(x1, x2), Math.max(y1, y2)], [Math.min(x1, x2), Math.max(y1, y2)],
-        [Math.min(x1, x2), Math.min(y1, y2)],
-      ]],
-    };
+    state.areaPolygon = { type: "Polygon", coordinates: [[
+      [Math.min(x1, x2), Math.min(y1, y2)], [Math.max(x1, x2), Math.min(y1, y2)],
+      [Math.max(x1, x2), Math.max(y1, y2)], [Math.min(x1, x2), Math.max(y1, y2)],
+      [Math.min(x1, x2), Math.min(y1, y2)],
+    ]] };
     state.areaCorner = null;
     state.drawing = null;
     setData("picked", null);
-    const w = Math.abs(x2 - x1), h = Math.abs(y2 - y1);
-    $("area-hint").textContent = `Area of ${Math.round(w)} × ${Math.round(h)} m selected.`;
+    $("area-reset").hidden = false;
+    $("area-hint").textContent =
+      `${Math.round(Math.abs(x2 - x1))} × ${Math.round(Math.abs(y2 - y1))} m selected.`;
     refreshZones();
+    refreshSummaries();
     return;
   }
 
@@ -634,63 +769,34 @@ async function onMapClick(e) {
       state.drawing = null;
       $("line-endpoints").textContent = "Start and end set.";
     }
-    setData("picked", {
-      type: "FeatureCollection",
-      features: state.picked.map(pointAt),
-    });
-    markSteps();
+    setData("picked", { type: "FeatureCollection", features: state.picked.map(pointAt) });
+    refreshSummaries();
   }
 }
-
-const pointAt = (lngLat) => ({
-  type: "Feature",
-  geometry: { type: "Point", coordinates: [lngLat.lng, lngLat.lat] },
-  properties: {},
-});
 
 /* ------------------------------------------------------------------- boot - */
 
 map.on("load", async () => {
   addOverlaySources();
+  wireControls();
   try {
-    const area = await api("/api/area");
+    const listing = await api("/api/areas");
+    state.areas = listing.areas;
     $("api-state").className = "pill ok";
-    $("api-state").textContent = `API ok · ${area.name}`;
-    $("area-desc").textContent = area.description;
-
-    const ring = area.polygon_wgs84.coordinates[0];
-    map.fitBounds(
-      ring.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(ring[0], ring[0])),
-      { padding: 24, duration: 0 },
-    );
-    map.addSource("study-area", { type: "geojson", data: area.polygon_wgs84 });
-    map.addLayer({
-      id: "study-area-line", type: "line", source: "study-area",
-      paint: { "line-color": "#1f6feb", "line-width": 1.5, "line-dasharray": [3, 2] },
-    });
-
-    for (const info of area.layers) addDataLayer(info);
-    $("area-counts").innerHTML = area.layers
-      .map((l) => `<span class="count-chip"><b>${l.feature_count}</b> ${l.title.toLowerCase()}</span>`)
-      .join("");
-    $("gaps").innerHTML = area.unavailable_layers
-      .map((g) => `<li><b>${g.name}</b> — ${g.reason}</li>`).join("");
-
-    const catalog = await api("/api/catalog");
-    state.catalog = catalog.constraints;
-    renderCatalog();
+    $("api-state").textContent = `API ok · ${listing.areas.length} areas`;
+    renderAreas();
+    await selectArea(listing.default_area_id);
 
     const chat = await api("/api/chat/status");
     $("chat-state").textContent = chat.available ? chat.model : "no API key";
     $("chat-state").className = `pill small ${chat.available ? "ok" : "bad"}`;
     if (!chat.available) {
-      addMessage("error", "Chat is off: the server has no ANTHROPIC_API_KEY. " +
-        "Everything else — layers, constraints, generation, checks, export — still works.");
+      addMessage("error", "Chat is off: the server has no ANTHROPIC_API_KEY. Everything " +
+        "else — layers, constraints, generation, checks, export — still works.");
     }
   } catch (e) {
     $("api-state").className = "pill bad";
     $("api-state").textContent = `API unreachable: ${e.message}`;
   }
-  wireControls();
-  markSteps();
+  openStep(1);
 });

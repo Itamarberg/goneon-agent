@@ -10,80 +10,123 @@
 <body>
 <div id="app">
   <aside id="panel">
-    <header>
+    <header id="panel-head">
       <h1>neon-agent</h1>
-      <p class="sub" id="area-desc">Loading…</p>
+      <p class="sub">Place infrastructure on real open data, checked against cited rules.</p>
     </header>
 
-    <!-- 1. Area -->
-    <section class="step" data-step="1">
-      <h2><span class="num">1</span> Area</h2>
-      <div class="choice">
-        <button class="btn" id="area-whole" data-active="true">Whole quarter</button>
-        <button class="btn" id="area-draw">Pick an area on the map</button>
-      </div>
-      <p class="hint" id="area-hint">Zürich Kreis 5.</p>
-      <div id="area-counts" class="counts"></div>
-    </section>
+    <div id="steps">
+      <!-- 1. Area -->
+      <section class="step" data-step="1" data-open="true">
+        <button class="step-head" type="button">
+          <span class="num">1</span>
+          <span class="step-title">Area</span>
+          <span class="step-summary"></span>
+        </button>
+        <div class="step-body">
+          <p class="hint">Pick a quarter. Real open data is loaded for each one.</p>
+          <div id="area-list" class="cards"></div>
+          <div class="sub-area">
+            <button class="btn" id="area-draw">Narrow it down on the map</button>
+            <button class="btn" id="area-reset" hidden>Use the whole quarter</button>
+            <p class="hint" id="area-hint"></p>
+          </div>
+          <div id="area-counts" class="counts"></div>
+          <div class="step-foot"><button class="btn primary next">Continue</button></div>
+        </div>
+      </section>
 
-    <!-- 2. What -->
-    <section class="step" data-step="2">
-      <h2><span class="num">2</span> What do you want to place?</h2>
-      <div class="choice">
-        <button class="btn" id="kind-point" data-active="true">Objects (points)</button>
-        <button class="btn" id="kind-line">A line</button>
-      </div>
-      <div id="point-options">
-        <label class="field">
-          <span>Object</span>
-          <select id="object-kind">
-            <option value="tree">Street trees</option>
-            <option value="bike_rack">Bike racks</option>
-            <option value="bench">Benches</option>
-            <option value="charging_station">Charging stations</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>How many</span>
-          <input type="number" id="object-count" value="20" min="1" max="200">
-        </label>
-      </div>
-      <div id="line-options" hidden>
-        <label class="field">
-          <span>Line</span>
-          <select id="line-kind">
-            <option value="power_line">Power line / cable</option>
-            <option value="pipe">Pipe</option>
-            <option value="path">Path</option>
-          </select>
-        </label>
-        <p class="hint">Click the map to set the start, then the end.</p>
-        <p class="hint" id="line-endpoints">No endpoints set.</p>
-      </div>
-    </section>
+      <!-- 2. Object -->
+      <section class="step" data-step="2">
+        <button class="step-head" type="button">
+          <span class="num">2</span>
+          <span class="step-title">What to place</span>
+          <span class="step-summary"></span>
+        </button>
+        <div class="step-body">
+          <div class="cards">
+            <button class="card" id="kind-point" data-active="true">
+              <strong>Objects</strong><span>trees, racks, benches, charging points</span>
+            </button>
+            <button class="card" id="kind-line">
+              <strong>A line</strong><span>cable, power line, pipe, path</span>
+            </button>
+          </div>
+          <div id="point-options">
+            <label class="field"><span>Object</span>
+              <select id="object-kind">
+                <option value="tree">Street trees</option>
+                <option value="bike_rack">Bike racks</option>
+                <option value="bench">Benches</option>
+                <option value="charging_station">Charging stations</option>
+              </select>
+            </label>
+            <label class="field"><span>How many</span>
+              <input type="number" id="object-count" value="20" min="1" max="200">
+            </label>
+          </div>
+          <div id="line-options" hidden>
+            <label class="field"><span>Line</span>
+              <select id="line-kind">
+                <option value="power_line">Power line / cable</option>
+                <option value="pipe">Pipe</option>
+                <option value="path">Path</option>
+              </select>
+            </label>
+            <p class="hint" id="line-endpoints">Click the map to set the start, then the end.</p>
+          </div>
+          <div class="step-foot"><button class="btn primary next">Continue</button></div>
+        </div>
+      </section>
 
-    <!-- 3. Constraints -->
-    <section class="step" data-step="3">
-      <h2><span class="num">3</span> Constraints</h2>
-      <p class="hint">Tick what the plan must respect. The map shows what is left.</p>
-      <div id="catalog" class="catalog"></div>
-      <div id="zone-summary" class="zone-summary"></div>
-    </section>
+      <!-- 3. Constraints -->
+      <section class="step" data-step="3">
+        <button class="step-head" type="button">
+          <span class="num">3</span>
+          <span class="step-title">Constraints</span>
+          <span class="step-summary"></span>
+        </button>
+        <div class="step-body">
+          <p class="hint">
+            Tick what the plan must respect. <b>Must hold</b> removes ground from the map;
+            <b>preference</b> is traded off, and its importance decides which preference
+            wins when they conflict.
+          </p>
+          <div id="catalog" class="catalog"></div>
+          <div id="zone-summary" class="zone-summary"></div>
+          <div class="step-foot"><button class="btn primary next">Continue</button></div>
+        </div>
+      </section>
 
-    <!-- 4. Generate -->
-    <section class="step" data-step="4">
-      <h2><span class="num">4</span> Generate</h2>
-      <button class="btn primary" id="generate">Generate plan variants</button>
-      <div id="variants" class="variants"></div>
-      <div id="infeasible" class="infeasible" hidden></div>
-    </section>
+      <!-- 4. Generate -->
+      <section class="step" data-step="4">
+        <button class="step-head" type="button">
+          <span class="num">4</span>
+          <span class="step-title">Generate</span>
+          <span class="step-summary"></span>
+        </button>
+        <div class="step-body">
+          <button class="btn primary wide" id="generate">Generate plan variants</button>
+          <div id="variants" class="variants"></div>
+          <div id="infeasible" class="infeasible" hidden></div>
+          <div class="step-foot"><button class="btn primary next">Continue</button></div>
+        </div>
+      </section>
 
-    <!-- 5. Export -->
-    <section class="step" data-step="5">
-      <h2><span class="num">5</span> Export</h2>
-      <button class="btn" id="export-geojson" disabled>Download GeoJSON</button>
-      <button class="btn" id="export-report" disabled>One-page report</button>
-    </section>
+      <!-- 5. Export -->
+      <section class="step" data-step="5">
+        <button class="step-head" type="button">
+          <span class="num">5</span>
+          <span class="step-title">Export</span>
+          <span class="step-summary"></span>
+        </button>
+        <div class="step-body">
+          <p class="hint">The constraints and findings travel with the plan.</p>
+          <button class="btn" id="export-geojson" disabled>Download GeoJSON</button>
+          <button class="btn" id="export-report" disabled>One-page report</button>
+        </div>
+      </section>
+    </div>
 
     <footer>
       <details id="layers-panel">
