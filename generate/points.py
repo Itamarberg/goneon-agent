@@ -17,6 +17,7 @@ from shapely.geometry.base import BaseGeometry
 
 from checks.plan import check_features, has_hard_violation
 from checks.zones import Zones, compute_zones
+from data.study_area import DEFAULT_AREA_ID
 from domain.models import Constraint, Feature, Geometry, Tradeoff, Variant
 from generate.scoring import cost_surface
 
@@ -155,6 +156,7 @@ def generate_points(
     target_count: int | None = None,
     spacing_m: float | None = None,
     zones: Zones | None = None,
+    area_id: str = DEFAULT_AREA_ID,
 ) -> list[Variant]:
     """Two or three plan variants for point objects. Deterministic.
 
@@ -162,7 +164,7 @@ def generate_points(
     a variant with a hard violation is a generator bug, so it is dropped rather
     than shown (docs/PLAN.md §4).
     """
-    zones = zones or compute_zones(area, constraints)
+    zones = zones or compute_zones(area, constraints, area_id=area_id)
     if zones.is_empty:
         return []
 
@@ -170,7 +172,7 @@ def generate_points(
     if len(points) == 0:
         return []
 
-    cost, _scored_with = cost_surface(points, constraints)
+    cost, _scored_with = cost_surface(points, constraints, area_id)
     spacing = _spacing_from(constraints, spacing_m)
     target = target_count or len(points)
 
@@ -191,7 +193,7 @@ def generate_points(
             continue
         variant_id = f"points-{strategy}"
         features = _features(points, chosen, object_kind, variant_id)
-        findings = check_features(features, constraints)
+        findings = check_features(features, constraints, area_id)
 
         if has_hard_violation(findings):
             # Loud on purpose: the generator and the checker disagreeing is the

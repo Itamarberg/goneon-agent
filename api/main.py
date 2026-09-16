@@ -21,12 +21,13 @@ from checks.plan import check_features, describe, summarise, unevaluable_reason
 from checks.registry import registered_types
 from checks.zones import compute_zones, zones_as_geojson
 from data.store import LayerNotAvailable, get_features_in, list_layers, study_area_summary
-from data.study_area import STUDY_AREA
+from data.study_area import DEFAULT_AREA_ID, UnknownStudyArea, get_area
 from domain.crs import to_lv95, to_wgs84
 from domain.models import CRS_WGS84, Constraint, Feature, Geometry, ObjectSpec, Variant
 from generate.infeasible import explain_for_line, explain_for_points
 from generate.line import generate_line
 from generate.points import generate_points
+from tools import core as tools_core
 
 VERSION = "0.1.0"
 
@@ -150,24 +151,49 @@ def health() -> dict:
     }
 
 
+def _area_id(area_id: str | None) -> str:
+    """Validate a study area id from a request, or 400 with what is available."""
+    try:
+        return get_area(area_id).id
+    except UnknownStudyArea as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@app.get("/api/areas")
+def areas() -> dict:
+    """Every study area this deployment has data for. Step 1 of the journey."""
+    out = []
+    for entry in tools_core.list_study_areas()["areas"]:
+        summary = study_area_summary(entry["id"])
+        out.append(
+            {
+                **entry,
+                "polygon_wgs84": to_wgs84(summary["polygon"]),
+                "feature_count": sum(layer["feature_count"] for layer in summary["layers"]),
+            }
+        )
+    return {"areas": out, "default_area_id": DEFAULT_AREA_ID}
+
+
 @app.get("/api/area")
-def area() -> dict:
-    """The study area and what real data it contains. Step 1 of the planner's journey."""
-    summary = study_area_summary()
+def area(area_id: str | None = None) -> dict:
+    """One study area and what real data it contains."""
+    summary = study_area_summary(_area_id(area_id))
     summary["polygon_wgs84"] = to_wgs84(summary["polygon"])
     return summary
 
 
 @app.get("/api/layers")
-def layers() -> dict:
+def layers(area_id: str | None = None) -> dict:
     """The layer catalogue: names constraints can refer to, with counts and attribution."""
-    return {"layers": [i.model_dump() for i in list_layers()]}
+    return {"layers": [i.model_dump() for i in list_layers(_area_id(area_id))]}
 
 
 @app.get("/api/layers/{name}")
 def layer(
     name: str,
     limit: int = Query(default=5000, ge=1, le=20000),
+    area_id: str | None = None,
 ) -> dict:
     """One layer as GeoJSON in WGS84, ready for the map.
 
@@ -175,7 +201,7 @@ def layer(
     works in metres (ARCHITECTURE.md, "Key contracts").
     """
     try:
-        features = get_features_in(name)
+        features = get_features_in(name, None, _area_id(area_id))
     except LayerNotAvailable as e:
         # 404 with the reason, so the UI can say *why* a layer is missing rather
         # than implying the request was malformed.
@@ -201,15 +227,16 @@ def layer(
 
 
 @app.get("/api/catalog")
-def catalog() -> dict:
+def catalog(area_id: str | None = None) -> dict:
     """The curated constraints, in plain words, with sources and caveats.
 
     `evaluable` is the honest field: a constraint can be in the catalog, correct,
     and still impossible to check here because the data is not open.
     """
+    resolved = _area_id(area_id)
     entries = []
     for c in load_catalog():
-        reason = unevaluable_reason(c)
+        reason = unevaluable_reason(c, resolved)
         entries.append(
             {
                 **c.model_dump(),
@@ -218,7 +245,7 @@ def catalog() -> dict:
                 "not_evaluable_reason": reason,
             }
         )
-    return {"constraints": entries, "types": registered_types()}
+    return {"area_id": resolved, "constraints": entries, "types": registered_types()}
 
 
 class ProjectRequest(BaseModel):
@@ -245,6 +272,7 @@ class ZonePreviewRequest(BaseModel):
     area: Geometry | None = Field(
         default=None, description="Polygon in EPSG:2056. Defaults to the whole study area."
     )
+    area_id: str | None = None
     constraints: list[Constraint] = Field(default_factory=list)
 
 
@@ -255,8 +283,9 @@ def zones(request: ZonePreviewRequest) -> dict:
     The generator uses this same function, so what a planner sees here is exactly
     what step 4 will place into.
     """
-    area = request.area or STUDY_AREA.polygon
-    computed = compute_zones(area, request.constraints)
+    resolved = _area_id(request.area_id)
+    area = request.area or get_area(resolved).polygon
+    computed = compute_zones(area, request.constraints, area_id=resolved)
     geo = zones_as_geojson(computed)
     for key in ("forbidden", "required", "allowed"):
         if geo[key] is not None:
@@ -270,11 +299,13 @@ class CheckRequest(BaseModel):
 
     features: list[Feature]
     constraints: list[Constraint]
+    area_id: str | None = None
 
 
 @app.post("/api/check")
 def check(request: CheckRequest) -> dict:
-    findings = check_features(request.features, request.constraints)
+    resolved = _area_id(request.area_id)
+    findings = check_features(request.features, request.constraints, resolved)
     out = []
     for f in findings:
         item = f.model_dump()
@@ -285,7 +316,11 @@ def check(request: CheckRequest) -> dict:
         "findings": out,
         "summary": summarise(findings),
         "constraints_checked": [
-            {"id": c.id, "description": describe(c), "evaluable": unevaluable_reason(c) is None}
+            {
+                "id": c.id,
+                "description": describe(c),
+                "evaluable": unevaluable_reason(c, resolved) is None,
+            }
             for c in request.constraints
         ],
     }
@@ -295,6 +330,7 @@ class GenerateRequest(BaseModel):
     """Step 4: constraints in, plan variants out."""
 
     area: Geometry | None = Field(default=None, description="Polygon in EPSG:2056.")
+    area_id: str | None = None
     object: ObjectSpec
     constraints: list[Constraint] = Field(default_factory=list)
 
@@ -318,7 +354,8 @@ def generate(request: GenerateRequest) -> dict:
     response carries which hard constraint blocks it and what relaxing it would
     give, because "not possible" alone is not decision support.
     """
-    area = request.area or STUDY_AREA.polygon
+    resolved = _area_id(request.area_id)
+    area = request.area or get_area(resolved).polygon
     spec = request.object
 
     if spec.geometry == "point":
@@ -328,9 +365,12 @@ def generate(request: GenerateRequest) -> dict:
             object_kind=spec.kind,
             target_count=spec.count,
             spacing_m=spec.spacing_m,
+            area_id=resolved,
         )
         if not variants:
-            report = explain_for_points(area, request.constraints, spec.count, spec.spacing_m)
+            report = explain_for_points(
+                area, request.constraints, spec.count, spec.spacing_m, area_id=resolved
+            )
             return {"variants": [], "infeasibility": report.model_dump()}
     else:
         if not spec.start or not spec.end:
@@ -341,9 +381,16 @@ def generate(request: GenerateRequest) -> dict:
             tuple(spec.start),
             tuple(spec.end),
             object_kind=spec.kind,
+            area_id=resolved,
         )
         if not variants:
-            report = explain_for_line(area, request.constraints, tuple(spec.start), tuple(spec.end))
+            report = explain_for_line(
+                area,
+                request.constraints,
+                tuple(spec.start),
+                tuple(spec.end),
+                area_id=resolved,
+            )
             return {"variants": [], "infeasibility": report.model_dump()}
 
     return {

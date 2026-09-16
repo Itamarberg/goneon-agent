@@ -149,25 +149,27 @@ class TestZones:
 
 
 def _fake_layer(monkeypatch, name, geoms):
-    """Swap one layer's geometry for a known one, and clear the geometry caches."""
+    """Swap one layer's geometry for a known one, and clear the geometry caches.
+
+    The doubles take *args so they keep working as the real functions gain
+    arguments (they now take a study area id).
+    """
     import checks.geometry as cg
     import data.store as store
 
-    monkeypatch.setattr(store, "geometries", lambda n, _g=geoms, _n=name: _g if n == _n else [])
-    monkeypatch.setattr(cg, "geometries", lambda n, _g=geoms, _n=name: _g if n == _n else [])
     monkeypatch.setattr(
-        cg,
-        "nearest_distance_m",
-        lambda geom, layer, _g=geoms: _nearest(geom, _g),
+        store, "geometries", lambda n, *_a, _g=geoms, _n=name: _g if n == _n else []
     )
+    monkeypatch.setattr(cg, "geometries", lambda n, *_a, _g=geoms, _n=name: _g if n == _n else [])
+    monkeypatch.setattr(cg, "nearest_distance_m", lambda geom, *_a, _g=geoms: _nearest(geom, _g))
     cg.layer_union.cache_clear()
     cg.buffered_union.cache_clear()
     # checks.types imported these by value, so they must be rebound there too.
     import checks.types as ct
 
-    monkeypatch.setattr(ct, "nearest_distance_m", lambda geom, layer, _g=geoms: _nearest(geom, _g))
-    monkeypatch.setattr(ct, "layer_union", lambda layer, _g=geoms: _union(_g))
-    monkeypatch.setattr(ct, "buffered_union", lambda layer, d, _g=geoms: _union(_g).buffer(d))
+    monkeypatch.setattr(ct, "nearest_distance_m", lambda geom, *_a, _g=geoms: _nearest(geom, _g))
+    monkeypatch.setattr(ct, "layer_union", lambda layer, *_a, _g=geoms: _union(_g))
+    monkeypatch.setattr(ct, "buffered_union", lambda layer, d, *_a, _g=geoms: _union(_g).buffer(d))
 
 
 def _union(geoms):

@@ -22,6 +22,7 @@ from shapely.geometry import LineString
 
 from checks.plan import check_features, has_hard_violation
 from checks.zones import Zones, compute_zones
+from data.study_area import DEFAULT_AREA_ID
 from domain.models import Constraint, Feature, Geometry, Variant
 from generate.points import _tradeoffs
 from generate.scoring import cost_surface
@@ -74,7 +75,12 @@ class Raster:
         return row * self.ncols + col
 
 
-def build_raster(zones: Zones, constraints: list[Constraint], soft_weight: float) -> tuple:
+def build_raster(
+    zones: Zones,
+    constraints: list[Constraint],
+    soft_weight: float,
+    area_id: str = DEFAULT_AREA_ID,
+) -> tuple:
     """Cost per cell: 1 to cross a free cell, more where soft constraints object.
 
     Cells outside the allowed area are impassable, which is how a hard
@@ -92,7 +98,7 @@ def build_raster(zones: Zones, constraints: list[Constraint], soft_weight: float
     passable = shapely.contains_xy(zones.allowed, centres[:, 0], centres[:, 1])
 
     cost = np.ones(raster.size, dtype=float)
-    soft, _used = cost_surface(centres, constraints)
+    soft, _used = cost_surface(centres, constraints, area_id)
     cost += soft_weight * soft
     cost[~passable] = IMPASSABLE
     return raster, cost, centres
@@ -232,19 +238,20 @@ def generate_line(
     end: tuple[float, float],
     object_kind: str = "line",
     zones: Zones | None = None,
+    area_id: str = DEFAULT_AREA_ID,
 ) -> list[Variant]:
     """Route variants between two points. Deterministic.
 
     The three strategies differ only in how much the soft constraints weigh and
     how hard the result is simplified — same raster, same solver.
     """
-    zones = zones or compute_zones(area, constraints)
+    zones = zones or compute_zones(area, constraints, area_id=area_id)
     if zones.is_empty:
         return []
 
     variants: list[Variant] = []
     for label_id, label, soft_weight, tolerance in STRATEGIES:
-        raster, cost, centres = build_raster(zones, constraints, soft_weight)
+        raster, cost, centres = build_raster(zones, constraints, soft_weight, area_id)
         grid = Grid(raster, cost)
         snapped_start = grid.snap(centres, *start)
         snapped_end = grid.snap(centres, *end)
@@ -267,7 +274,7 @@ def generate_line(
             geometry=line.__geo_interface__,
             properties={"generated": True},
         )
-        findings = check_features([feature], constraints)
+        findings = check_features([feature], constraints, area_id)
         if has_hard_violation(findings):
             log.error("route %s violates a hard constraint it was generated under", variant_id)
             continue

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from checks.plan import unevaluable_reason
 from checks.zones import compute_zones
+from data.study_area import DEFAULT_AREA_ID
 from domain.models import Constraint, Geometry, InfeasibilityReport, Relaxation
 
 # How close the binary search gets to the threshold that makes a request work.
@@ -20,16 +21,15 @@ THRESHOLD_TOLERANCE_M = 0.25
 MAX_SEARCH_STEPS = 12
 
 
-def _hard_evaluable(constraints: list[Constraint]) -> list[Constraint]:
-    return [c for c in constraints if c.hard and not unevaluable_reason(c)]
+def _hard_evaluable(constraints: list[Constraint], area_id: str) -> list[Constraint]:
+    return [c for c in constraints if c.hard and not unevaluable_reason(c, area_id)]
 
 
-def _allowed_area(area: Geometry, constraints: list[Constraint]) -> float:
-    return compute_zones(area, constraints).allowed.area
+def _allowed_area(area: Geometry, constraints: list[Constraint], area_id: str) -> float:
+    return compute_zones(area, constraints, area_id=area_id).allowed.area
 
 
 def _relaxed_threshold(
-    area: Geometry,
     constraints: list[Constraint],
     target: Constraint,
     feasible,
@@ -65,6 +65,7 @@ def explain(
     constraints: list[Constraint],
     feasible=None,
     reason: str = "No position in the area satisfies every hard constraint.",
+    area_id: str = DEFAULT_AREA_ID,
 ) -> InfeasibilityReport:
     """Which hard constraint blocks the request, and what relaxing it gives.
 
@@ -74,7 +75,7 @@ def explain(
     if feasible is None:
 
         def feasible(cs):
-            return _allowed_area(area, cs) > 0
+            return _allowed_area(area, cs, area_id) > 0
 
     # Verify rather than assume. Being asked to explain a request that in fact
     # works means the caller has a bug, and saying "impossible" would be a lie.
@@ -84,7 +85,7 @@ def explain(
             reason="This request is satisfiable; there is nothing to relax.",
         )
 
-    hard = _hard_evaluable(constraints)
+    hard = _hard_evaluable(constraints, area_id)
     if not hard:
         return InfeasibilityReport(
             feasible=False,
@@ -99,13 +100,13 @@ def explain(
         def feasible(cs):  # noqa: E306 - local default, kept next to its use
             return _allowed_area(area, cs) > 0
 
-    base_area = _allowed_area(area, constraints)
+    base_area = _allowed_area(area, constraints, area_id)
     relaxations: list[Relaxation] = []
 
     for constraint in hard:
         without = [c for c in constraints if c.id != constraint.id]
-        freed = _allowed_area(area, without) - base_area
-        suggested = _relaxed_threshold(area, constraints, constraint, feasible)
+        freed = _allowed_area(area, without, area_id) - base_area
+        suggested = _relaxed_threshold(constraints, constraint, feasible)
         relaxations.append(
             Relaxation(
                 constraint_id=constraint.id,
@@ -133,6 +134,7 @@ def explain_for_points(
     constraints: list[Constraint],
     target_count: int | None = None,
     spacing_m: float | None = None,
+    area_id: str = DEFAULT_AREA_ID,
 ) -> InfeasibilityReport:
     """Infeasibility for a point request, counting positions rather than area.
 
@@ -142,12 +144,12 @@ def explain_for_points(
     from generate.points import candidate_grid
 
     def feasible(cs) -> bool:
-        zones = compute_zones(area, cs)
+        zones = compute_zones(area, cs, area_id=area_id)
         if zones.is_empty:
             return False
         return len(candidate_grid(zones.allowed)) > 0
 
-    report = explain(area, constraints, feasible=feasible)
+    report = explain(area, constraints, feasible=feasible, area_id=area_id)
 
     # Say what each relaxation is actually worth, in positions.
     for relaxation in report.relaxations:
@@ -158,7 +160,7 @@ def explain_for_points(
             update={"params": {**target.params, "d_m": relaxation.suggested_required_m}}
         )
         others = [c for c in constraints if c.id != target.id]
-        zones = compute_zones(area, [*others, relaxed])
+        zones = compute_zones(area, [*others, relaxed], area_id=area_id)
         if not zones.is_empty:
             points = candidate_grid(zones.allowed)
             relaxation.positions_gained = _max_positions(points, spacing_m, target_count)
@@ -181,15 +183,16 @@ def explain_for_line(
     constraints: list[Constraint],
     start: tuple[float, float],
     end: tuple[float, float],
+    area_id: str = DEFAULT_AREA_ID,
 ) -> InfeasibilityReport:
     """Infeasibility for a route: feasible means start and end are connected."""
     from generate.line import Grid, build_raster
 
     def feasible(cs) -> bool:
-        zones = compute_zones(area, cs)
+        zones = compute_zones(area, cs, area_id=area_id)
         if zones.is_empty:
             return False
-        raster, cost, centres = build_raster(zones, cs, soft_weight=1.0)
+        raster, cost, centres = build_raster(zones, cs, 1.0, area_id)
         grid = Grid(raster, cost)
         s = grid.snap(centres, *start)
         e = grid.snap(centres, *end)

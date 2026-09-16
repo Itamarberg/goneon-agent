@@ -14,25 +14,28 @@ from shapely import unary_union
 from shapely.geometry.base import BaseGeometry
 
 from data.store import geometries
+from data.study_area import DEFAULT_AREA_ID
 
 
 @cache
-def layer_union(layer: str) -> BaseGeometry:
+def layer_union(layer: str, area_id: str = DEFAULT_AREA_ID) -> BaseGeometry:
     """All features of a layer as one geometry."""
-    return unary_union(geometries(layer))
+    return unary_union(geometries(layer, area_id))
 
 
 @cache
-def buffered_union(layer: str, distance_m: float) -> BaseGeometry:
+def buffered_union(layer: str, distance_m: float, area_id: str = DEFAULT_AREA_ID) -> BaseGeometry:
     """The layer grown by `distance_m`. This is what a clearance rule looks like."""
     if distance_m <= 0:
-        return layer_union(layer)
+        return layer_union(layer, area_id)
     # Buffer before union: buffering 1170 small polygons and merging is far
     # cheaper than buffering one huge multipolygon with thousands of vertices.
-    return unary_union([g.buffer(distance_m) for g in geometries(layer)])
+    return unary_union([g.buffer(distance_m) for g in geometries(layer, area_id)])
 
 
-def nearest_distance_m(geom: BaseGeometry, layer: str) -> tuple[float, BaseGeometry | None]:
+def nearest_distance_m(
+    geom: BaseGeometry, layer: str, area_id: str = DEFAULT_AREA_ID
+) -> tuple[float, BaseGeometry | None]:
     """Distance from `geom` to the closest feature of `layer`, and that feature.
 
     Returns (inf, None) for an empty layer. Uses the store's spatial index with a
@@ -42,7 +45,7 @@ def nearest_distance_m(geom: BaseGeometry, layer: str) -> tuple[float, BaseGeome
     from data.store import query
 
     for radius in (25.0, 100.0, 400.0, 2000.0):
-        hits = query(layer, geom, distance_m=radius)
+        hits = query(layer, geom, distance_m=radius, area_id=area_id)
         if hits:
             best_geom, best_d = None, float("inf")
             for _feature, shp in hits:
@@ -66,7 +69,7 @@ def connecting_line(a: BaseGeometry, b: BaseGeometry) -> dict | None:
     return None if line is None else line.__geo_interface__
 
 
-def nearest_distances(points, layer: str):
+def nearest_distances(points, layer: str, area_id: str = DEFAULT_AREA_ID):
     """Distance from each point to the nearest feature of a layer, vectorised.
 
     Uses the layer's STRtree rather than the distance to the merged union:
@@ -79,7 +82,7 @@ def nearest_distances(points, layer: str):
 
     from data.store import _index
 
-    tree, _features, geoms = _index(layer)
+    tree, _features, geoms = _index(layer, area_id)
     if not geoms:
         return np.full(len(points), np.inf)
     pts = shapely.points(points[:, 0], points[:, 1])
@@ -87,7 +90,7 @@ def nearest_distances(points, layer: str):
     return distances
 
 
-def contains_mask(points, layer: str):
+def contains_mask(points, layer: str, area_id: str = DEFAULT_AREA_ID):
     """True where a point falls inside the layer's polygons.
 
     A prepared containment test, which is far cheaper than asking for a distance
@@ -96,7 +99,7 @@ def contains_mask(points, layer: str):
     import numpy as np
     import shapely
 
-    union = layer_union(layer)
+    union = layer_union(layer, area_id)
     if union.is_empty:
         return np.zeros(len(points), dtype=bool)
     shapely.prepare(union)

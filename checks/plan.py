@@ -13,10 +13,11 @@ import checks.types  # noqa: F401 - importing registers the five types
 from checks.registry import CheckContext, get
 from data.sources import UNAVAILABLE_LAYERS
 from data.store import LayerNotAvailable, load_layer
+from data.study_area import DEFAULT_AREA_ID
 from domain.models import Constraint, Feature, Finding, Severity
 
 
-def unevaluable_reason(constraint: Constraint) -> str | None:
+def unevaluable_reason(constraint: Constraint, area_id: str = DEFAULT_AREA_ID) -> str | None:
     """Why this constraint cannot be decided here, or None if it can be.
 
     Saying "the Leitungskataster is not open, so this rule is unchecked" is the
@@ -31,7 +32,7 @@ def unevaluable_reason(constraint: Constraint) -> str | None:
     if constraint.layer in UNAVAILABLE_LAYERS:
         return UNAVAILABLE_LAYERS[constraint.layer]
     try:
-        load_layer(constraint.layer)
+        load_layer(constraint.layer, area_id)
     except LayerNotAvailable as e:
         return e.reason
     return None
@@ -47,17 +48,21 @@ def _not_evaluable(constraint: Constraint, feature_id: str, reason: str) -> Find
     )
 
 
-def check_features(features: list[Feature], constraints: list[Constraint]) -> list[Finding]:
+def check_features(
+    features: list[Feature],
+    constraints: list[Constraint],
+    area_id: str = DEFAULT_AREA_ID,
+) -> list[Finding]:
     """Every finding for every (feature, constraint) pair. Deterministic.
 
     A constraint whose `applies_to` names a different object kind is skipped:
     a catalog rule about power lines should not fire on a bike rack.
     """
     findings: list[Finding] = []
-    ctx = CheckContext(siblings=features)
+    ctx = CheckContext(siblings=features, area_id=area_id)
 
     for constraint in constraints:
-        reason = unevaluable_reason(constraint)
+        reason = unevaluable_reason(constraint, area_id)
         if reason:
             # Reported once for the plan, not once per object: it is a statement
             # about the data, not about any single position.

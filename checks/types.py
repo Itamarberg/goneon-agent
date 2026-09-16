@@ -12,6 +12,7 @@ from shapely.geometry.base import BaseGeometry
 
 from checks.geometry import buffered_union, connecting_line, layer_union, nearest_distance_m
 from checks.registry import CheckContext, CheckType, Zone, register
+from data.study_area import DEFAULT_AREA_ID
 from domain.models import Constraint, Feature, Finding
 
 
@@ -58,14 +59,14 @@ def _finding(
 # --------------------------------------------------------------------------- #
 
 
-def _min_distance_zone(c: Constraint) -> Zone:
-    return Zone("forbidden", buffered_union(_layer(c), _d(c)))
+def _min_distance_zone(c: Constraint, area_id: str = DEFAULT_AREA_ID) -> Zone:
+    return Zone("forbidden", buffered_union(_layer(c), _d(c), area_id))
 
 
-def _min_distance_eval(f: Feature, c: Constraint, _ctx: CheckContext) -> Finding | None:
+def _min_distance_eval(f: Feature, c: Constraint, ctx: CheckContext) -> Finding | None:
     geom = shape(f.geometry)
     required = _d(c)
-    measured, nearest = nearest_distance_m(geom, _layer(c))
+    measured, nearest = nearest_distance_m(geom, _layer(c), ctx.area_id)
     if measured >= required:
         return None
     return _finding(
@@ -94,14 +95,14 @@ register(
 # --------------------------------------------------------------------------- #
 
 
-def _max_distance_zone(c: Constraint) -> Zone:
-    return Zone("required", buffered_union(_layer(c), _d(c)))
+def _max_distance_zone(c: Constraint, area_id: str = DEFAULT_AREA_ID) -> Zone:
+    return Zone("required", buffered_union(_layer(c), _d(c), area_id))
 
 
-def _max_distance_eval(f: Feature, c: Constraint, _ctx: CheckContext) -> Finding | None:
+def _max_distance_eval(f: Feature, c: Constraint, ctx: CheckContext) -> Finding | None:
     geom = shape(f.geometry)
     required = _d(c)
-    measured, nearest = nearest_distance_m(geom, _layer(c))
+    measured, nearest = nearest_distance_m(geom, _layer(c), ctx.area_id)
     if measured <= required:
         return None
     return _finding(
@@ -130,13 +131,13 @@ register(
 # --------------------------------------------------------------------------- #
 
 
-def _not_within_zone(c: Constraint) -> Zone:
-    return Zone("forbidden", layer_union(_layer(c)))
+def _not_within_zone(c: Constraint, area_id: str = DEFAULT_AREA_ID) -> Zone:
+    return Zone("forbidden", layer_union(_layer(c), area_id))
 
 
-def _not_within_eval(f: Feature, c: Constraint, _ctx: CheckContext) -> Finding | None:
+def _not_within_eval(f: Feature, c: Constraint, ctx: CheckContext) -> Finding | None:
     geom = shape(f.geometry)
-    union = layer_union(_layer(c))
+    union = layer_union(_layer(c), ctx.area_id)
     if not geom.intersects(union):
         return None
     return _finding(c, f, f"lies inside a {c.layer}", 0.0, None, f.geometry)
@@ -152,13 +153,13 @@ register(
 )
 
 
-def _within_zone(c: Constraint) -> Zone:
-    return Zone("required", layer_union(_layer(c)))
+def _within_zone(c: Constraint, area_id: str = DEFAULT_AREA_ID) -> Zone:
+    return Zone("required", layer_union(_layer(c), area_id))
 
 
-def _within_eval(f: Feature, c: Constraint, _ctx: CheckContext) -> Finding | None:
+def _within_eval(f: Feature, c: Constraint, ctx: CheckContext) -> Finding | None:
     geom = shape(f.geometry)
-    union = layer_union(_layer(c))
+    union = layer_union(_layer(c), ctx.area_id)
     if geom.intersects(union):
         return None
     measured = geom.distance(union)
@@ -187,7 +188,7 @@ register(
 # --------------------------------------------------------------------------- #
 
 
-def _min_spacing_zone(_c: Constraint) -> Zone:
+def _min_spacing_zone(_c: Constraint, _area_id: str = DEFAULT_AREA_ID) -> Zone:
     # Not an area: it depends on where the other objects end up, so the generator
     # enforces it while placing rather than by subtracting a region.
     return Zone("placement", None)

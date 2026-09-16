@@ -14,6 +14,7 @@ from shapely.geometry.base import BaseGeometry
 import checks.types  # noqa: F401 - importing registers the five types
 from checks.plan import unevaluable_reason
 from checks.registry import get
+from data.study_area import DEFAULT_AREA_ID
 from domain.models import Constraint, Geometry
 
 
@@ -39,7 +40,12 @@ class Zones:
         return self.allowed.is_empty
 
 
-def compute_zones(area: Geometry, constraints: list[Constraint], hard_only: bool = True) -> Zones:
+def compute_zones(
+    area: Geometry,
+    constraints: list[Constraint],
+    hard_only: bool = True,
+    area_id: str = DEFAULT_AREA_ID,
+) -> Zones:
     """Allowed = area − forbidden ∩ required, using only constraints that apply.
 
     Soft constraints are excluded by default: they shape the *score* inside the
@@ -55,12 +61,12 @@ def compute_zones(area: Geometry, constraints: list[Constraint], hard_only: bool
         if hard_only and not constraint.hard:
             skipped[constraint.id] = "soft: affects the score, not the allowed area"
             continue
-        reason = unevaluable_reason(constraint)
+        reason = unevaluable_reason(constraint, area_id)
         if reason:
             skipped[constraint.id] = reason
             continue
 
-        zone = get(constraint.type).zone(constraint)
+        zone = get(constraint.type).zone(constraint, area_id)
         if zone.geometry is None:
             skipped[constraint.id] = "enforced while placing, not as an area"
             continue

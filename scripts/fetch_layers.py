@@ -24,7 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from data.sources import LAYER_SOURCES, LayerSource  # noqa: E402
-from data.study_area import STUDY_AREA  # noqa: E402
+from data.study_area import STUDY_AREAS, StudyArea  # noqa: E402
 
 OUT_DIR = Path(__file__).resolve().parents[1] / "data" / "layers"
 TIMEOUT_S = 180
@@ -125,8 +125,9 @@ def normalise(src: LayerSource, raw: list[dict]) -> list[dict]:
     return out
 
 
-def write_layer(src: LayerSource, features: list[dict]) -> Path:
-    path = OUT_DIR / f"{src.name}.geojson"
+def write_layer(area: StudyArea, src: LayerSource, features: list[dict]) -> Path:
+    path = OUT_DIR / area.id / f"{src.name}.geojson"
+    path.parent.mkdir(parents=True, exist_ok=True)
     doc = {
         "type": "FeatureCollection",
         "name": src.name,
@@ -139,7 +140,8 @@ def write_layer(src: LayerSource, features: list[dict]) -> Path:
             "licence": src.licence,
             "notes": src.notes,
             "fetched_at": datetime.now(UTC).isoformat(timespec="seconds"),
-            "study_area": STUDY_AREA.name,
+            "study_area": area.id,
+            "study_area_title": area.title,
         },
         "features": features,
     }
@@ -150,25 +152,31 @@ def write_layer(src: LayerSource, features: list[dict]) -> Path:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--only", nargs="*", help="layer names to fetch (default: all)")
+    ap.add_argument(
+        "--area",
+        nargs="*",
+        choices=sorted(STUDY_AREAS),
+        help="study areas to fetch (default: all of them)",
+    )
     args = ap.parse_args()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    bbox = STUDY_AREA.bbox
-    print(f"study area: {STUDY_AREA.name}  bbox={_bbox_str(bbox)} (EPSG:2056)")
+    areas = [STUDY_AREAS[a] for a in (args.area or sorted(STUDY_AREAS))]
 
     failures = 0
-    for src in LAYER_SOURCES:
-        if args.only and src.name not in args.only:
-            continue
-        try:
-            raw = fetch_raw(src, bbox)
-            features = normalise(src, raw)
-            path = write_layer(src, features)
-            size_kb = path.stat().st_size / 1024
-            print(f"  {src.name:<16} {len(features):>6} features  {size_kb:>8.0f} KB")
-        except Exception as e:  # noqa: BLE001 - a failing source must not stop the rest
-            failures += 1
-            print(f"  {src.name:<16} FAILED: {e}")
+    for area in areas:
+        print(f"\n{area.id}: {area.title}  bbox={_bbox_str(area.bbox)} (EPSG:2056)")
+        for src in LAYER_SOURCES:
+            if args.only and src.name not in args.only:
+                continue
+            try:
+                features = normalise(src, fetch_raw(src, area.bbox))
+                path = write_layer(area, src, features)
+                size_kb = path.stat().st_size / 1024
+                print(f"  {src.name:<16} {len(features):>6} features  {size_kb:>8.0f} KB")
+            except Exception as e:  # noqa: BLE001 - one source must not stop the rest
+                failures += 1
+                print(f"  {src.name:<16} FAILED: {e}")
     return 1 if failures else 0
 
 

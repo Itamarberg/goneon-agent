@@ -15,7 +15,7 @@ from shapely.geometry import shape
 from shapely.strtree import STRtree
 
 from data.sources import BY_NAME, LAYER_SOURCES, UNAVAILABLE_LAYERS
-from data.study_area import STUDY_AREA
+from data.study_area import DEFAULT_AREA_ID, get_area
 from domain.models import Feature, Geometry, Layer, LayerInfo
 
 LAYERS_DIR = Path(__file__).resolve().parent / "layers"
@@ -37,12 +37,16 @@ class LayerNotAvailable(LookupError):
 
 
 @cache
-def load_layer(name: str) -> Layer:
-    """Read one baked layer. Cached; the files are immutable at runtime."""
+def load_layer(name: str, area_id: str = DEFAULT_AREA_ID) -> Layer:
+    """Read one baked layer for one study area.
+
+    Cached per (layer, area): the files are immutable at runtime, and a planner
+    switching areas should not pay to re-read the one they came from.
+    """
     if name in UNAVAILABLE_LAYERS:
         raise LayerNotAvailable(name, UNAVAILABLE_LAYERS[name])
     src = BY_NAME.get(name)
-    path = LAYERS_DIR / f"{name}.geojson"
+    path = LAYERS_DIR / area_id / f"{name}.geojson"
     if src is None or not path.exists():
         known = ", ".join(sorted(BY_NAME))
         raise LayerNotAvailable(name, f"Unknown layer '{name}'. Available layers: {known}.")
@@ -72,7 +76,7 @@ def load_layer(name: str) -> Layer:
 
 
 @cache
-def _index(name: str) -> tuple[STRtree, list[Feature], list]:
+def _index(name: str, area_id: str = DEFAULT_AREA_ID) -> tuple[STRtree, list[Feature], list]:
     """Spatial index and parsed geometries for a layer, built once.
 
     Without the index, a clearance check against 1170 buildings for every
@@ -80,33 +84,35 @@ def _index(name: str) -> tuple[STRtree, list[Feature], list]:
     generator stops being interactive. Parsing GeoJSON into shapely is the other
     half of that cost, so the parsed geometries are cached alongside the tree.
     """
-    layer = load_layer(name)
+    layer = load_layer(name, area_id)
     geoms = [shape(f.geometry) for f in layer.features]
     return STRtree(geoms), layer.features, geoms
 
 
-def geometries(name: str) -> list:
+def geometries(name: str, area_id: str = DEFAULT_AREA_ID) -> list:
     """Shapely geometries of a layer, in file order. For checks/ and generate/."""
-    return _index(name)[2]
+    return _index(name, area_id)[2]
 
 
-def query(name: str, geom, distance_m: float = 0.0) -> list[tuple[Feature, object]]:
+def query(
+    name: str, geom, distance_m: float = 0.0, area_id: str = DEFAULT_AREA_ID
+) -> list[tuple[Feature, object]]:
     """Features of `name` whose bounds are within `distance_m` of `geom`.
 
     A bounds-level filter: the caller still measures exactly. It exists to keep
     the exact measurement off 1000+ irrelevant features.
     """
-    tree, features, shapes = _index(name)
+    tree, features, shapes = _index(name, area_id)
     search = geom.buffer(distance_m) if distance_m else geom
     return [(features[i], shapes[i]) for i in tree.query(search)]
 
 
-def list_layers() -> list[LayerInfo]:
-    """Every layer in the deployment, with counts and attribution."""
+def list_layers(area_id: str = DEFAULT_AREA_ID) -> list[LayerInfo]:
+    """Every layer in one study area, with counts and attribution."""
     out: list[LayerInfo] = []
     for src in LAYER_SOURCES:
         try:
-            layer = load_layer(src.name)
+            layer = load_layer(src.name, area_id)
         except LayerNotAvailable:
             continue
         out.append(
@@ -123,30 +129,37 @@ def list_layers() -> list[LayerInfo]:
     return out
 
 
-def get_features_in(name: str, area: Geometry | None = None) -> list[Feature]:
+def get_features_in(
+    name: str, area: Geometry | None = None, area_id: str = DEFAULT_AREA_ID
+) -> list[Feature]:
     """Features of a layer, optionally clipped to an area (both in EPSG:2056).
 
     Clipping is by intersection, not containment: a building half inside the
     planner's polygon still constrains what happens inside it.
     """
-    layer = load_layer(name)
+    layer = load_layer(name, area_id)
     if area is None:
         return layer.features
     poly = shape(area)
-    tree, features, shapes = _index(name)
+    tree, features, shapes = _index(name, area_id)
     hits = tree.query(poly)
     return [features[i] for i in sorted(hits) if shapes[i].intersects(poly)]
 
 
-def study_area_summary() -> dict:
+def study_area_summary(area_id: str = DEFAULT_AREA_ID) -> dict:
     """What the UI shows in step 1: where we are and what is in it."""
+    area = get_area(area_id)
     return {
-        "name": STUDY_AREA.name,
-        "description": STUDY_AREA.description,
-        "bbox": list(STUDY_AREA.bbox),
-        "polygon": STUDY_AREA.polygon,
-        "area_km2": round(STUDY_AREA.area_km2, 3),
-        "layers": [info.model_dump() for info in list_layers()],
+        "id": area.id,
+        "name": area.id,
+        "title": area.title,
+        "description": area.description,
+        # Measured against the city's own boundary data, not asserted.
+        "districts": [{"share_pct": share, "name": name} for share, name in area.districts],
+        "bbox": list(area.bbox),
+        "polygon": area.polygon,
+        "area_km2": round(area.area_km2, 3),
+        "layers": [info.model_dump() for info in list_layers(area_id)],
         "unavailable_layers": [
             {"name": n, "reason": r} for n, r in sorted(UNAVAILABLE_LAYERS.items())
         ],

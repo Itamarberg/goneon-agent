@@ -19,6 +19,7 @@ from typing import Literal
 
 from shapely.geometry.base import BaseGeometry
 
+from data.study_area import DEFAULT_AREA_ID
 from domain.models import Constraint, Feature, Finding
 
 ZoneRole = Literal["forbidden", "required", "placement"]
@@ -41,7 +42,7 @@ class Zone:
 class CheckType:
     name: str
     describe: Callable[[Constraint], str]
-    zone: Callable[[Constraint], Zone]
+    zone: Callable[[Constraint, str], Zone]
     evaluate: Callable[[Feature, Constraint, CheckContext], Finding | None]
     needs_layer: bool = True
     param_names: tuple[str, ...] = ()
@@ -52,10 +53,14 @@ class CheckContext:
     """Everything an evaluation may need beyond the single feature.
 
     `siblings` carries the other planned objects, which is what min_spacing
-    measures against; a check never reaches into global state for it.
+    measures against, and `area_id` says which study area's data to measure
+    against. Both are passed rather than looked up, so a check never depends on
+    global state — measuring against the wrong city's buildings would be a
+    silent, invisible error.
     """
 
     siblings: list[Feature]
+    area_id: str = DEFAULT_AREA_ID
 
 
 _REGISTRY: dict[str, CheckType] = {}

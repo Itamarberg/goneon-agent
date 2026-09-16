@@ -14,6 +14,7 @@ import numpy as np
 
 from checks.geometry import contains_mask, nearest_distances
 from checks.plan import unevaluable_reason
+from data.study_area import DEFAULT_AREA_ID
 from domain.models import Constraint
 
 # A cost of 1.0 means "fully violates this soft constraint". Costs are summed
@@ -35,13 +36,15 @@ def _normalised_excess(distances: np.ndarray, allowed: float) -> np.ndarray:
     return np.clip((distances - allowed) / allowed, 0.0, 1.0)
 
 
-def constraint_cost(points: np.ndarray, constraint: Constraint) -> np.ndarray | None:
+def constraint_cost(
+    points: np.ndarray, constraint: Constraint, area_id: str = DEFAULT_AREA_ID
+) -> np.ndarray | None:
     """Cost in [0, 1] for each candidate point under one soft constraint.
 
     Returns None when the constraint cannot shape the cost surface — an
     unavailable layer, or a type that is enforced during placement instead.
     """
-    if unevaluable_reason(constraint):
+    if unevaluable_reason(constraint, area_id):
         return None
     if constraint.type == "min_spacing":
         return None  # enforced while placing; it is about the plan, not the place
@@ -49,11 +52,11 @@ def constraint_cost(points: np.ndarray, constraint: Constraint) -> np.ndarray | 
     # Containment only needs a prepared inside/outside test; a clearance needs a
     # nearest-neighbour distance. Both avoid measuring against the merged union.
     if constraint.type == "within":
-        return np.where(contains_mask(points, constraint.layer), 0.0, FULL_COST)
+        return np.where(contains_mask(points, constraint.layer, area_id), 0.0, FULL_COST)
     if constraint.type == "not_within":
-        return np.where(contains_mask(points, constraint.layer), FULL_COST, 0.0)
+        return np.where(contains_mask(points, constraint.layer, area_id), FULL_COST, 0.0)
 
-    distances = nearest_distances(points, constraint.layer)
+    distances = nearest_distances(points, constraint.layer, area_id)
     if not np.isfinite(distances).any():
         return None
 
@@ -65,7 +68,9 @@ def constraint_cost(points: np.ndarray, constraint: Constraint) -> np.ndarray | 
     return None
 
 
-def cost_surface(points: np.ndarray, constraints: list[Constraint]) -> tuple[np.ndarray, list[str]]:
+def cost_surface(
+    points: np.ndarray, constraints: list[Constraint], area_id: str = DEFAULT_AREA_ID
+) -> tuple[np.ndarray, list[str]]:
     """Total soft cost per candidate, and which constraints contributed.
 
     Hard constraints are not included: they have already removed everything they
@@ -76,7 +81,7 @@ def cost_surface(points: np.ndarray, constraints: list[Constraint]) -> tuple[np.
     for c in constraints:
         if c.hard:
             continue
-        cost = constraint_cost(points, c)
+        cost = constraint_cost(points, c, area_id)
         if cost is None:
             continue
         total += cost
@@ -84,6 +89,6 @@ def cost_surface(points: np.ndarray, constraints: list[Constraint]) -> tuple[np.
     return total, used
 
 
-def distance_to_layer(points: np.ndarray, layer: str) -> np.ndarray:
+def distance_to_layer(points: np.ndarray, layer: str, area_id: str = DEFAULT_AREA_ID) -> np.ndarray:
     """Metres from each candidate to the nearest feature of a layer."""
-    return nearest_distances(points, layer)
+    return nearest_distances(points, layer, area_id)
