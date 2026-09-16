@@ -254,29 +254,30 @@ def _tradeoffs(
     return sorted(out, key=lambda t: (-t.weight, -t.count))
 
 
-# (letter, label, strategy, best-fit tolerance, what to tell the planner)
+# The planner's dial for B: how much worse than the best position a candidate
+# may score and still count as good ground. Near 0 the fit is strict; near 1
+# everything is good enough and B converges on A.
+DEFAULT_FIT_TOLERANCE = 0.05
+
 STRATEGIES = (
     (
-        "A", "Even coverage", "max_count", None,
+        "A",
+        "Even coverage",
+        "max_count",
         "Hard rules only: spread as widely as the ground allows. Preferences are ignored, "
         "so compare against B to see what they cost.",
     ),
     (
-        "B1", "Best fit, strict", "best_score", 0.02,
-        "Only the positions that satisfy your preferences best, spread within them.",
+        "B",
+        "Best fit",
+        "best_score",
+        "Positions within {pct}% of the best fit for your preferences, spread within that "
+        "ground. Turn the dial down for a stricter fit, up for more room.",
     ),
     (
-        "B2", "Best fit, balanced", "best_score_balanced", 0.15,
-        "Positions within 15% of the best fit, which gives the objects room to spread "
-        "while still sitting where the preferences want them.",
-    ),
-    (
-        "B3", "Best fit, roomy", "best_score_roomy", 0.4,
-        "Anything in the better half of the ground counts as good enough; the widest "
-        "spread that still leans towards your preferences.",
-    ),
-    (
-        "C", "Regular rows", "regular", None,
+        "C",
+        "Regular rows",
+        "regular",
         "Rows from the middle of the area outwards, evenly spaced. A deliberate layout, "
         "preferences ignored.",
     ),
@@ -291,8 +292,9 @@ def generate_points(
     spacing_m: float | None = None,
     zones: Zones | None = None,
     area_id: str = DEFAULT_AREA_ID,
+    fit_tolerance: float = DEFAULT_FIT_TOLERANCE,
 ) -> list[Variant]:
-    """Up to five plan variants for point objects. Deterministic.
+    """Two or three plan variants for point objects. Deterministic.
 
     Every variant is verified by the independent checker before it is returned;
     a variant with a hard violation is a generator bug, so it is dropped rather
@@ -319,14 +321,16 @@ def generate_points(
     }
 
     variants: list[Variant] = []
-    for label_id, label, strategy, tolerance, description in STRATEGIES:
+    fit_tolerance = min(max(float(fit_tolerance), 0.0), 1.0)
+    for label_id, label, strategy, description in STRATEGIES:
+        description = description.format(pct=round(fit_tolerance * 100))
         if strategy == "max_count" and target_count:
             # Even coverage: spread over the whole area rather than filling from
             # one corner until the count is reached.
             chosen, spacing = _farthest_point_select(points, target_count, floor_spacing)
-        elif tolerance is not None and target_count:
+        elif strategy == "best_score" and target_count:
             chosen, spacing = _best_fit_select(
-                points, cost, target_count, floor_spacing, tolerance
+                points, cost, target_count, floor_spacing, fit_tolerance
             )
         else:
             chosen, spacing = _select_spread(
@@ -359,6 +363,7 @@ def generate_points(
                     "count": len(features),
                     "mean_soft_cost": round(float(np.mean(cost[chosen])), 3),
                     # What the constraints required, and what the layout achieved.
+                    "fit_tolerance": fit_tolerance,
                     "required_spacing_m": round(floor_spacing, 1),
                     "achieved_spacing_m": round(spacing, 1),
                     "candidates_considered": len(points),

@@ -26,7 +26,7 @@ from domain.crs import to_lv95, to_wgs84
 from domain.models import CRS_WGS84, Constraint, Feature, Geometry, ObjectSpec, Variant
 from generate.infeasible import explain_for_line, explain_for_points
 from generate.line import generate_line
-from generate.points import generate_points
+from generate.points import DEFAULT_FIT_TOLERANCE, generate_points
 from tools import core as tools_core
 
 VERSION = "0.1.0"
@@ -413,6 +413,12 @@ class GenerateRequest(BaseModel):
     area_id: str | None = None
     object: ObjectSpec
     constraints: list[Constraint] = Field(default_factory=list)
+    fit_tolerance: float = Field(
+        default=DEFAULT_FIT_TOLERANCE,
+        ge=0.0,
+        le=1.0,
+        description="The planner's dial for the best-fit variant: 0 strict, 1 anything goes.",
+    )
 
 
 def _variant_for_map(variant: Variant) -> dict:
@@ -446,6 +452,7 @@ def generate(request: GenerateRequest) -> dict:
             target_count=spec.count,
             spacing_m=spec.spacing_m,
             area_id=resolved,
+            fit_tolerance=request.fit_tolerance,
         )
         if not variants:
             report = explain_for_points(

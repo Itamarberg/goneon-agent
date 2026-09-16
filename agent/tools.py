@@ -138,6 +138,7 @@ def build_tools(session: Session) -> list:
         constraints: list[Any],
         count: int | None = None,
         spacing_m: float | None = None,
+        fit_tolerance: float = 0.05,
     ) -> str:
         """Generate plan variants for point objects (trees, bike racks, benches,
         charging stations). Returns variants to compare, or an explanation of why no
@@ -148,9 +149,15 @@ def build_tools(session: Session) -> list:
             constraints: Catalog ids, or constraint objects the planner confirmed.
             count: How many objects the planner wants.
             spacing_m: Minimum distance between them, if the planner gave one.
+            fit_tolerance: 0 to 1. How far from the best position for the planner's
+                preferences a spot may be and still count as good ground for the
+                best-fit variant. 0.05 is the default; lower is stricter, higher
+                spreads the objects more. Only change it when the planner asks.
         """
         record("generate_points")
-        result = core.generate_points(object_kind, constraints, count, spacing_m, area())
+        result = core.generate_points(
+            object_kind, constraints, count, spacing_m, area(), fit_tolerance=fit_tolerance
+        )
         session.record_variants(result["variants"])
         return as_tool_result(
             {

@@ -29,6 +29,7 @@ from data.study_area import DEFAULT_AREA_ID, STUDY_AREAS, UnknownStudyArea, get_
 from domain.models import Constraint, Feature, Geometry, Source
 from generate.infeasible import explain_for_line, explain_for_points
 from generate.line import generate_line as _generate_line
+from generate.points import DEFAULT_FIT_TOLERANCE
 from generate.points import generate_points as _generate_points
 
 ConstraintRef = str | dict[str, Any]
@@ -274,6 +275,7 @@ def generate_points(
     spacing_m: float | None = None,
     area: Geometry | None = None,
     area_id: str | None = None,
+    fit_tolerance: float = DEFAULT_FIT_TOLERANCE,
 ) -> dict[str, Any]:
     """Plan variants for point objects, or an explanation of why there are none."""
     aid = _checked(area_id)
@@ -286,6 +288,7 @@ def generate_points(
         target_count=count,
         spacing_m=spacing_m,
         area_id=aid,
+        fit_tolerance=fit_tolerance,
     )
     if not variants:
         report = explain_for_points(target, resolved, count, spacing_m, area_id=aid)
