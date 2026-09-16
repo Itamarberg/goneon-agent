@@ -20,7 +20,17 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+# The API reads .env via `uvicorn --env-file`; this script has to load it itself,
+# so that the documented setup works the same way for both.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(ROOT / ".env")
+except ImportError:  # pragma: no cover - dotenv ships with uvicorn[standard]
+    pass
 
 from agent import loop  # noqa: E402
 
@@ -44,6 +54,8 @@ def turn(title: str, message: str, **kwargs):
 
 
 def main() -> int:
+    import anthropic
+
     if not loop.available():
         print(
             "ANTHROPIC_API_KEY is not set.\n"
@@ -53,6 +65,20 @@ def main() -> int:
 
     print(f"model: {loop.MODEL}")
 
+    try:
+        return run_checks()
+    except anthropic.AuthenticationError:
+        print(f"\n{RED}The API key was rejected.{OFF} Check the value in .env or your shell.")
+        return 2
+    except anthropic.APIStatusError as e:
+        print(f"\n{RED}The API returned {e.status_code}.{OFF} {e.message}")
+        return 2
+    except anthropic.APIConnectionError:
+        print(f"\n{RED}Could not reach the API.{OFF} Check the network.")
+        return 2
+
+
+def run_checks() -> int:
     # 1. A plan must come from the generator, and be named by a real id.
     reply = turn(
         "1. Generating a plan",
