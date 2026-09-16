@@ -10,6 +10,7 @@ the point: the deterministic product does not depend on one.
 
 import pytest
 
+from agent import loop
 from agent.loop import AgentUnavailable, run_turn
 from agent.session import Session, summarise_variant
 from agent.tools import build_tools
@@ -125,12 +126,32 @@ class TestToolSurface:
         assert "No variant" in result["error"]
 
 
-class TestWithoutAnApiKey:
-    def test_the_chat_fails_clearly_and_says_what_still_works(self, monkeypatch):
+class TestCredentials:
+    def _no_credentials(self, monkeypatch, tmp_path):
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+        monkeypatch.setattr(loop, "PROFILE_DIR", tmp_path / "nothing-here")
+
+    def test_the_chat_fails_clearly_and_says_what_still_works(self, monkeypatch, tmp_path):
+        self._no_credentials(monkeypatch, tmp_path)
         with pytest.raises(AgentUnavailable) as e:
             run_turn(messages=[{"role": "user", "content": "hello"}])
-        assert "map" in str(e.value) and "work" in str(e.value)
+        assert "MCP" in str(e.value) and "only the chat does not" in str(e.value)
+
+    def test_an_api_key_counts_as_available(self, monkeypatch, tmp_path):
+        self._no_credentials(monkeypatch, tmp_path)
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+        assert loop.available()
+
+    def test_an_oauth_profile_counts_as_available(self, monkeypatch, tmp_path):
+        # Checking only the env var reported "no key" on a machine where the SDK
+        # would have authenticated fine from a profile.
+        self._no_credentials(monkeypatch, tmp_path)
+        profile = tmp_path / "anthropic"
+        profile.mkdir()
+        (profile / "profiles.json").write_text("{}")
+        monkeypatch.setattr(loop, "PROFILE_DIR", profile)
+        assert loop.available()
 
 
 def _variant(vid, features=None, findings=None):

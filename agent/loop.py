@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import anthropic
@@ -46,15 +47,33 @@ class AgentReply:
     warnings: list[str]
 
 
+# Where the SDK looks for credentials, in its own order of precedence. An API key
+# is what a deployment uses; a profile from `ant auth login` is the convenient
+# path for local development.
+PROFILE_DIR = Path.home() / ".config" / "anthropic"
+
+
 def available() -> bool:
-    return bool(os.getenv("ANTHROPIC_API_KEY"))
+    """Whether the SDK has some credential to authenticate with.
+
+    Not just ANTHROPIC_API_KEY: the SDK also accepts ANTHROPIC_AUTH_TOKEN and an
+    OAuth profile written by `ant auth login`. Checking only the key would make
+    the chat report itself unavailable on a machine where it would work.
+
+    Note that a Claude Code login is *not* one of these — it is a session for
+    that CLI, not a credential for this application.
+    """
+    if os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"):
+        return True
+    return PROFILE_DIR.is_dir() and any(PROFILE_DIR.iterdir())
 
 
 def _client() -> anthropic.Anthropic:
     if not available():
         raise AgentUnavailable(
-            "ANTHROPIC_API_KEY is not set. The map, constraints, generation and checks "
-            "all work without it; only the chat does not."
+            "No Anthropic credentials found. Set ANTHROPIC_API_KEY (what a deployment "
+            "uses) or run `ant auth login` for local development. The map, constraints, "
+            "generation, checks, export and MCP all work without it; only the chat does not."
         )
     return anthropic.Anthropic()
 
