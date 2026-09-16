@@ -8,6 +8,8 @@ The live model is not called here. These tests run without an API key, which is
 the point: the deterministic product does not depend on one.
 """
 
+import json
+
 import pytest
 
 from agent import loop
@@ -122,8 +124,28 @@ class TestToolSurface:
     def test_checking_a_variant_that_does_not_exist_returns_a_usable_error(self):
         session = Session()
         check = next(t for t in build_tools(session) if t.name == "check_variant")
-        result = check.call({"variant_id": "points-nope", "constraints": []})
+        result = json.loads(check.call({"variant_id": "points-nope", "constraints": []}))
         assert "No variant" in result["error"]
+
+    def test_every_tool_returns_a_string_the_api_will_accept(self):
+        # A tool_result must be a string or content blocks. Returning a dict was
+        # passed through untouched and the API rejected the whole request — a
+        # failure no test without a live model had caught.
+        session = Session()
+        session.record_variants([_variant("points-max_count")])
+        calls = {
+            "list_layers": {},
+            "describe_area": {},
+            "list_catalog": {"object_kind": "tree"},
+            "explain_constraint": {"constraint_id": "not-on-building"},
+            "check_variant": {"variant_id": "points-max_count", "constraints": []},
+        }
+        for tool in build_tools(session):
+            if tool.name not in calls:
+                continue
+            result = tool.call(calls[tool.name])
+            assert isinstance(result, str), f"{tool.name} returned {type(result).__name__}"
+            json.loads(result)  # and it must be parseable
 
 
 class TestCredentials:

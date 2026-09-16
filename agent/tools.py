@@ -13,6 +13,7 @@ description the model reads.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from anthropic import beta_tool
@@ -20,6 +21,16 @@ from anthropic import beta_tool
 from agent.session import Session, summarise_variant
 from domain.models import Geometry
 from tools import core
+
+
+def as_tool_result(payload: dict[str, Any]) -> str:
+    """Serialise a tool's return value for the API.
+
+    A tool_result must be a string or a list of content blocks; the runner passes
+    a returned dict through untouched and the API rejects the request. So every
+    tool here returns JSON text, which is also what the model reads best.
+    """
+    return json.dumps(payload, ensure_ascii=False, default=str)
 
 
 def build_tools(session: Session) -> list:
@@ -32,21 +43,21 @@ def build_tools(session: Session) -> list:
         return session.area
 
     @beta_tool
-    def list_layers() -> dict:
+    def list_layers() -> str:
         """List the real open-data layers available, and the layers that are deliberately
         missing with the reason. Call this before referring to a layer by name."""
         record("list_layers")
-        return core.list_layers()
+        return as_tool_result(core.list_layers())
 
     @beta_tool
-    def describe_area() -> dict:
+    def describe_area() -> str:
         """Describe the planner's current area: how many buildings, trees, schools,
         stops and so on it contains, and what cannot be evaluated there."""
         record("describe_area")
-        return core.describe_area(area())
+        return as_tool_result(core.describe_area(area()))
 
     @beta_tool
-    def list_catalog(object_kind: str = "") -> dict:
+    def list_catalog(object_kind: str = "") -> str:
         """List the curated constraints with their thresholds, sources and whether they
         can be checked against open data. This is where numbers come from.
 
@@ -54,10 +65,10 @@ def build_tools(session: Session) -> list:
             object_kind: Optional object kind (tree, bike_rack, power_line) to filter by.
         """
         record("list_catalog")
-        return core.list_catalog(object_kind or None)
+        return as_tool_result(core.list_catalog(object_kind or None))
 
     @beta_tool
-    def explain_constraint(constraint_id: str) -> dict:
+    def explain_constraint(constraint_id: str) -> str:
         """Explain one catalog constraint: what it requires, where the number comes from,
         and whether it can be checked here.
 
@@ -65,7 +76,7 @@ def build_tools(session: Session) -> list:
             constraint_id: The catalog id, e.g. lev-building-clearance.
         """
         record("explain_constraint")
-        return core.explain_constraint(constraint_id)
+        return as_tool_result(core.explain_constraint(constraint_id))
 
     @beta_tool
     def propose_constraint(
@@ -77,7 +88,7 @@ def build_tools(session: Session) -> list:
         applies_to: str = "",
         d_m: float | None = None,
         hard: bool = True,
-    ) -> dict:
+    ) -> str:
         """Turn a constraint the planner described in their own words into a structured
         proposal. The planner must confirm it before it is used — this never applies it.
 
@@ -106,10 +117,10 @@ def build_tools(session: Session) -> list:
             hard=hard,
         )
         session.proposals.append(result)
-        return result
+        return as_tool_result(result)
 
     @beta_tool
-    def preview_zones(constraints: list[Any]) -> dict:
+    def preview_zones(constraints: list[Any]) -> str:
         """Show how much of the area these constraints leave available, and which of
         them did not contribute. Use it to check a request is possible before generating.
 
@@ -119,7 +130,7 @@ def build_tools(session: Session) -> list:
         record("preview_zones")
         result = core.preview_zones(constraints, area())
         session.zones = result.pop("geometry")
-        return result
+        return as_tool_result(result)
 
     @beta_tool
     def generate_points(
@@ -127,7 +138,7 @@ def build_tools(session: Session) -> list:
         constraints: list[Any],
         count: int | None = None,
         spacing_m: float | None = None,
-    ) -> dict:
+    ) -> str:
         """Generate plan variants for point objects (trees, bike racks, benches,
         charging stations). Returns variants to compare, or an explanation of why no
         plan is possible.
@@ -141,10 +152,12 @@ def build_tools(session: Session) -> list:
         record("generate_points")
         result = core.generate_points(object_kind, constraints, count, spacing_m, area())
         session.record_variants(result["variants"])
-        return {
-            "variants": [summarise_variant(v) for v in result["variants"]],
-            "infeasibility": result["infeasibility"],
-        }
+        return as_tool_result(
+            {
+                "variants": [summarise_variant(v) for v in result["variants"]],
+                "infeasibility": result["infeasibility"],
+            }
+        )
 
     @beta_tool
     def generate_line(
@@ -152,7 +165,7 @@ def build_tools(session: Session) -> list:
         constraints: list[Any],
         start: list[float],
         end: list[float],
-    ) -> dict:
+    ) -> str:
         """Route a line object (cable, power line, pipe, path) between two points the
         planner chose. Returns route variants, or an explanation of why none exists.
 
@@ -165,13 +178,15 @@ def build_tools(session: Session) -> list:
         record("generate_line")
         result = core.generate_line(object_kind, constraints, tuple(start), tuple(end), area())
         session.record_variants(result["variants"])
-        return {
-            "variants": [summarise_variant(v) for v in result["variants"]],
-            "infeasibility": result["infeasibility"],
-        }
+        return as_tool_result(
+            {
+                "variants": [summarise_variant(v) for v in result["variants"]],
+                "infeasibility": result["infeasibility"],
+            }
+        )
 
     @beta_tool
-    def check_variant(variant_id: str, constraints: list[Any]) -> dict:
+    def check_variant(variant_id: str, constraints: list[Any]) -> str:
         """Check a variant that was already generated against a constraint set. Use this
         to answer "does variant X also satisfy Y?" without regenerating.
 
@@ -183,10 +198,10 @@ def build_tools(session: Session) -> list:
         variant = session.variants.get(variant_id)
         if variant is None:
             known = ", ".join(sorted(session.variants)) or "none yet"
-            return {
-                "error": f"No variant {variant_id!r} exists. Generated so far: {known}.",
-            }
-        return core.check_plan(variant["features"], constraints)
+            return as_tool_result(
+                {"error": f"No variant {variant_id!r} exists. Generated so far: {known}."}
+            )
+        return as_tool_result(core.check_plan(variant["features"], constraints))
 
     @beta_tool
     def explain_infeasibility(
@@ -195,7 +210,7 @@ def build_tools(session: Session) -> list:
         geometry: str = "point",
         count: int | None = None,
         spacing_m: float | None = None,
-    ) -> dict:
+    ) -> str:
         """Work out which hard constraint makes a request impossible, and what value
         would make it work.
 
@@ -207,13 +222,15 @@ def build_tools(session: Session) -> list:
             spacing_m: Minimum distance between them, if any.
         """
         record("explain_infeasibility")
-        return core.explain_infeasibility(
-            constraints,
-            object_kind=object_kind,
-            geometry=geometry,
-            count=count,
-            spacing_m=spacing_m,
-            area=area(),
+        return as_tool_result(
+            core.explain_infeasibility(
+                constraints,
+                object_kind=object_kind,
+                geometry=geometry,
+                count=count,
+                spacing_m=spacing_m,
+                area=area(),
+            )
         )
 
     return [
