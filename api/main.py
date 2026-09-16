@@ -6,7 +6,9 @@ computes geometry or decides a verdict.
 
 from __future__ import annotations
 
+import contextlib
 import os
+from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +34,57 @@ VERSION = "0.1.0"
 # Comma-separated list; "*" in local development.
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
 
+
+def _mcp():
+    """The MCP server and its ASGI app, if the optional dependency is installed.
+
+    MCP is an extension point, not a requirement: the API and the website work
+    without it, and a deployment that does not want to expose the tools to other
+    agents simply leaves the extra out.
+
+    The app is built once here — it owns the session manager the lifespan runs,
+    so a second call would create a manager nothing is running.
+    """
+    try:
+        from mcp.server.transport_security import TransportSecuritySettings
+
+        from mcp_server.server import server as mcp_server
+    except ImportError:  # pragma: no cover - depends on the install profile
+        return None, None
+
+    # MCP defends against DNS rebinding by checking the Host header, which is
+    # aimed at servers running on someone's laptop. This one is a public service
+    # other people's agents are meant to reach, so the deployment states its own
+    # hostnames instead. "*" turns the check off; it is opt-in, not the default.
+    hosts = [h.strip() for h in os.getenv("MCP_ALLOWED_HOSTS", "").split(",") if h.strip()]
+    wildcard = "*" in hosts
+    security = TransportSecuritySettings(
+        enable_dns_rebinding_protection=not wildcard,
+        allowed_hosts=hosts or ["127.0.0.1:8000", "localhost:8000"],
+        allowed_origins=hosts or ["*"],
+    )
+
+    app = mcp_server.streamable_http_app(
+        # Serve at the mount root, so mounting at /mcp gives /mcp, not /mcp/mcp.
+        streamable_http_path="/",
+        transport_security=security,
+    )
+    return mcp_server, app
+
+
+MCP, MCP_APP = _mcp()
+
+
+@contextlib.asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Run the MCP session manager alongside the API when MCP is mounted."""
+    if MCP is None:
+        yield
+        return
+    async with MCP.session_manager.run():
+        yield
+
+
 app = FastAPI(
     title="neon-agent API",
     version=VERSION,
@@ -39,7 +92,12 @@ app = FastAPI(
         "Deterministic infrastructure planning tools: real open data layers, "
         "cited constraints, generators and checks."
     ),
+    lifespan=lifespan,
 )
+
+if MCP_APP is not None:
+    # The same tools the website and the in-app agent use, for any MCP client.
+    app.mount("/mcp", MCP_APP)
 
 app.add_middleware(
     CORSMiddleware,
@@ -57,6 +115,7 @@ def health() -> dict:
         "status": "ok",
         "version": VERSION,
         "service": "neon-agent",
+        "mcp": MCP is not None,
     }
 
 

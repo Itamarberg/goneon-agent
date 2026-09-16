@@ -11,3 +11,7 @@ services:
       # Only the API holds the key; the browser never sees it.
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Hostnames MCP clients may reach this service on. "*" turns off the
+      # Host-header check, which exists for servers running on a laptop.
+      - key: MCP_ALLOWED_HOSTS
+        sync: false

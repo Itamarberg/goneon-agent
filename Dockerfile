@@ -8,7 +8,7 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir . && pip install --no-cache-dir ".[agent]"
+RUN pip install --no-cache-dir ".[agent,mcp]"
 
 COPY domain/ ./domain/
 COPY checks/ ./checks/
@@ -18,6 +18,7 @@ COPY generate/ ./generate/
 COPY tools/ ./tools/
 COPY agent/ ./agent/
 COPY api/ ./api/
+COPY mcp_server/ ./mcp_server/
 
 EXPOSE 8000
 # Render supplies $PORT.

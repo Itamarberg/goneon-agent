@@ -69,3 +69,17 @@ async def test_an_mcp_client_is_told_what_cannot_be_evaluated():
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+def test_the_api_container_mounts_mcp_without_shadowing_the_api():
+    # Mounting it at the root once made every /api route 404. Both must answer.
+    from fastapi.testclient import TestClient
+
+    from api.main import app
+
+    # As a context manager, so the lifespan that runs MCP's session manager fires.
+    with TestClient(app) as client:
+        assert client.get("/api/health").json()["mcp"] is True
+        # The MCP app answers at /mcp/ rather than 404ing; a bare GET is refused
+        # by the MCP transport, which is still a response from the MCP app.
+        assert client.get("/mcp/").status_code != 404
