@@ -32,8 +32,18 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and [docs/adr/0001](docs/adr/0001-determi
 
 ### 1. The website
 
-Pick an area, choose what to place, tick constraints (the map shows what they
-leave), generate, compare variants, export GeoJSON or a one-page report.
+Five steps down the side, one open at a time: pick a quarter, choose what to
+place, tick the constraints (the map redraws what they leave), generate, compare
+variants, export.
+
+- Each constraint is **must hold** or a **preference**, and a preference carries
+  an importance that decides which one gives way when they conflict.
+- You can add your own rule in the panel — you supply the threshold and the
+  source, and it is labelled as yours, not as a regulation.
+- Export as GeoJSON, Markdown, or a printable PDF that carries the map, the
+  constraints with their sources, the trade-offs and what could not be checked.
+- **Start over** clears the plan.
+
 The chat is available at every step and required at none.
 
 ### 2. The REST API
@@ -46,6 +56,7 @@ OpenAPI at `/docs`. The website uses only these.
 | `GET /api/layers/{name}` | One layer as GeoJSON (WGS84) |
 | `GET /api/catalog` | Curated constraints with sources and `evaluable` |
 | `POST /api/zones` | Forbidden / required / allowed areas for a constraint set |
+| `POST /api/constraints/draft` | Validate a planner's own rule (never applies it) |
 | `POST /api/generate` | Plan variants, or an explanation of why there are none |
 | `POST /api/check` | Verify any plan against any constraints |
 | `POST /api/chat` | Ask the agent |

@@ -85,6 +85,9 @@ const map = new maplibregl.Map({
   },
   center: [8.52, 47.39],
   zoom: 14,
+  // Required to read the canvas back for the printed report; without it the
+  // browser is free to discard the drawing buffer after each frame.
+  preserveDrawingBuffer: true,
 });
 map.addControl(new maplibregl.NavigationControl(), "top-right");
 map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
@@ -255,6 +258,7 @@ async function selectArea(areaId) {
 
   clearDataLayers();
   for (const info of area.layers) addDataLayer(info);
+  fillLayerOptions(area.layers);
   $("area-counts").innerHTML = area.layers
     .map((l) => `<span class="count-chip"><b>${l.feature_count}</b> ${l.title.toLowerCase()}</span>`)
     .join("");
@@ -526,8 +530,7 @@ function renderInfeasible(report) {
 /* -------------------------------------------------------------- step 5 ---- */
 
 function setExportEnabled(on) {
-  $("export-geojson").disabled = !on;
-  $("export-report").disabled = !on;
+  for (const id of ["export-geojson", "export-report", "export-pdf"]) $(id).disabled = !on;
 }
 
 function download(name, text, type) {
@@ -586,6 +589,235 @@ ${notEvaluable || "None."}
 This is decision support, not an approval. Every number above came from a
 deterministic check against open data; the sources are listed with each rule.
 `, "text/markdown");
+}
+
+/* ------------------------------------------- the planner's own constraint -- */
+
+let constraintTypes = [];
+
+async function loadConstraintForm() {
+  const body = await api("/api/constraint-types");
+  constraintTypes = body.types;
+  $("own-type").innerHTML = constraintTypes
+    .map((t) => `<option value="${t.name}">${t.label}</option>`).join("");
+  syncOwnForm();
+}
+
+function syncOwnForm() {
+  const type = constraintTypes.find((t) => t.name === $("own-type").value);
+  if (!type) return;
+  $("own-layer-field").hidden = !type.needs_layer;
+  $("own-distance-field").hidden = !type.needs_distance;
+}
+
+function fillLayerOptions(layers) {
+  // Only layers this area actually has; a rule against data we do not hold is
+  // possible through the agent, but the form should not invite it.
+  $("own-layer").innerHTML = layers
+    .map((l) => `<option value="${l.name}">${l.title}</option>`).join("");
+}
+
+function ownHardness() {
+  const on = $("own-hard").querySelector('button[data-on="true"]');
+  return on ? on.dataset.hard === "true" : true;
+}
+
+async function addOwnConstraint() {
+  const feedback = $("own-feedback");
+  const title = $("own-title").value.trim();
+  const source = $("own-source").value.trim();
+  const type = $("own-type").value;
+  const spec = constraintTypes.find((t) => t.name === type);
+  const distance = $("own-distance").value;
+
+  if (!title || !source) {
+    feedback.className = "hint bad";
+    feedback.textContent = "A rule needs a title and a source.";
+    return;
+  }
+
+  const payload = {
+    id: slug(title),
+    title,
+    type,
+    source_text: source,
+    layer: spec.needs_layer ? $("own-layer").value : null,
+    applies_to: state.objectKind,
+    d_m: spec.needs_distance && distance !== "" ? Number(distance) : null,
+    hard: ownHardness(),
+    weight: 1,
+    area_id: state.areaId,
+  };
+
+  try {
+    const result = await post("/api/constraints/draft", payload);
+    if (result.problems.length) {
+      feedback.className = "hint bad";
+      feedback.textContent = result.problems.join(" ");
+      return;
+    }
+    // A proposal only becomes a constraint because the planner added it here.
+    const constraint = {
+      ...result.proposal,
+      description: result.description,
+      evaluable: result.evaluable,
+      not_evaluable_reason: result.not_evaluable_reason,
+    };
+    state.catalog = [...state.catalog, constraint];
+    state.constraints.set(constraint.id, {
+      constraint, hard: constraint.hard, weight: constraint.weight || 1,
+    });
+    renderCatalog();
+    refreshZones();
+    feedback.className = "hint ok";
+    feedback.textContent = result.evaluable
+      ? "Added, and ticked."
+      : `Added — but it cannot be checked: ${result.not_evaluable_reason}`;
+    $("own-title").value = "";
+    $("own-source").value = "";
+    $("own-distance").value = "";
+  } catch (e) {
+    feedback.className = "hint bad";
+    feedback.textContent = e.message;
+  }
+}
+
+const slug = (text) =>
+  text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "my-rule";
+
+/* ------------------------------------------------------------------ reset -- */
+
+async function resetAll() {
+  state.areaPolygon = null;
+  state.areaCorner = null;
+  state.geometry = "point";
+  state.objectKind = "tree";
+  state.count = 20;
+  state.start = state.end = null;
+  state.picked = [];
+  state.constraints.clear();
+  state.variants = [];
+  state.selectedVariant = null;
+  state.drawing = null;
+  state.chat = [];
+
+  $("object-kind").value = "tree";
+  $("line-kind").value = "power_line";
+  $("object-count").value = "20";
+  $("kind-point").dataset.active = "true";
+  $("kind-line").dataset.active = "false";
+  $("point-options").hidden = false;
+  $("line-options").hidden = true;
+  $("variants").innerHTML = "";
+  $("infeasible").hidden = true;
+  $("chat-log").innerHTML = "";
+  $("own-feedback").textContent = "";
+  $("area-reset").hidden = true;
+  $("area-hint").textContent = "";
+  for (const id of ["plan", "findings", "zone-forbidden", "zone-allowed", "picked"]) setData(id, null);
+  setExportEnabled(false);
+
+  // Reload the area from scratch so any constraint the planner added is gone too.
+  const areaId = state.areaId;
+  state.areaId = null;
+  await selectArea(areaId || state.areas[0].id);
+  openStep(1);
+}
+
+/* ----------------------------------------------------------------- report -- */
+
+function mapImage() {
+  // The canvas is read back straight after a render, so the printed map matches
+  // what the planner is looking at.
+  try {
+    map.triggerRepaint();
+    return map.getCanvas().toDataURL("image/png");
+  } catch {
+    return null; // a tainted or unavailable canvas must not stop the report
+  }
+}
+
+function buildReport() {
+  const v = state.selectedVariant;
+  const area = state.areas.find((a) => a.id === state.areaId);
+  const constraints = chosenConstraints();
+  const notEvaluable = v.findings.filter((f) => f.severity === "not_evaluable");
+  const violations = v.findings.filter((f) => f.severity === "violation");
+
+  const rows = constraints.map((c) => {
+    const kind = c.source.kind === "curated" ? "regulation / guideline"
+      : c.source.kind === "convention" ? "convention, no legal basis" : "the planner's own";
+    return `<tr>
+      <td>${escapeHtml(c.title)}</td>
+      <td>${c.hard ? "must hold" : `preference (${importanceLabel(c.weight)})`}</td>
+      <td>${escapeHtml(c.source.text)}<div class="note">${kind}${
+        c.verified ? "" : " · source sentence not yet quoted"}</div></td>
+    </tr>`;
+  }).join("");
+
+  const metrics = Object.entries(v.metrics)
+    .map(([k, val]) => `<tr><td>${k.replace(/_/g, " ")}</td><td class="num">${val}</td></tr>`)
+    .join("");
+
+  const image = mapImage();
+  $("report").innerHTML = `
+    <h1>${escapeHtml(v.label)}</h1>
+    <div class="meta">
+      ${escapeHtml(area ? area.title : state.areaId)}${state.areaPolygon ? " (part of it)" : ""}
+      · ${v.features.length} × ${escapeHtml(labelFor(state.objectKind))}
+      · ${new Date().toLocaleString()}
+    </div>
+
+    <section>
+      <h2>Plan</h2>
+      ${image ? `<img class="map" src="${image}" alt="Map of the plan">` : ""}
+      <table>${metrics}</table>
+    </section>
+
+    <section>
+      <h2>Constraints applied</h2>
+      ${constraints.length
+        ? `<table><tr><th>Rule</th><th>Counts as</th><th>Source</th></tr>${rows}</table>`
+        : '<p class="none">None.</p>'}
+    </section>
+
+    <section>
+      <h2>Trade-offs</h2>
+      ${v.tradeoffs.length
+        ? `<ul>${v.tradeoffs.map((t) => `<li>${t.count} × ${escapeHtml(t.title)}${
+            tradeoffDetail(t)} — importance: ${importanceLabel(t.weight)}</li>`).join("")}</ul>`
+        : '<p class="none">None: every constraint that could be checked is met.</p>'}
+    </section>
+
+    <section>
+      <h2>Not evaluated</h2>
+      ${notEvaluable.length
+        ? `<ul>${notEvaluable.map((f) =>
+            `<li><b>${escapeHtml(f.constraint_id)}</b> — ${escapeHtml(f.message)}</li>`).join("")}</ul>`
+        : '<p class="none">None: every constraint could be checked against open data.</p>'}
+    </section>
+
+    ${violations.length ? `<section><h2>Violations</h2><ul>${violations.map((f) =>
+      `<li>${escapeHtml(f.feature_id)}: ${escapeHtml(f.message)}</li>`).join("")}</ul></section>` : ""}
+
+    <footer>
+      Decision support, not an approval. Every number above was computed by a
+      deterministic check against open data — sources are listed with each rule, and
+      anything that could not be checked is named rather than assumed to pass.
+      Generated by neon-agent. Base map © swisstopo; data © Stadt Zürich / Kanton Zürich OGD.
+    </footer>`;
+}
+
+function escapeHtml(text) {
+  const el = document.createElement("div");
+  el.textContent = text == null ? "" : String(text);
+  return el.innerHTML;
+}
+
+function exportPDF() {
+  buildReport();
+  // Give the layout a frame before handing over to the print dialog.
+  requestAnimationFrame(() => window.print());
 }
 
 /* ------------------------------------------------------------------- chat - */
@@ -706,6 +938,17 @@ function wireControls() {
   $("generate").addEventListener("click", generate);
   $("export-geojson").addEventListener("click", exportGeoJSON);
   $("export-report").addEventListener("click", exportReport);
+  $("export-pdf").addEventListener("click", exportPDF);
+  $("reset").addEventListener("click", resetAll);
+  $("own-type").addEventListener("change", syncOwnForm);
+  $("own-add").addEventListener("click", addOwnConstraint);
+  for (const button of $("own-hard").querySelectorAll("button")) {
+    button.addEventListener("click", () => {
+      for (const b of $("own-hard").querySelectorAll("button")) {
+        b.dataset.on = String(b === button);
+      }
+    });
+  }
   $("chat-form").addEventListener("submit", sendChat);
   $("chat-toggle").addEventListener("click", () => {
     const chat = $("chat");
@@ -785,6 +1028,7 @@ map.on("load", async () => {
     $("api-state").className = "pill ok";
     $("api-state").textContent = `API ok · ${listing.areas.length} areas`;
     renderAreas();
+    await loadConstraintForm();
     await selectArea(listing.default_area_id);
 
     const chat = await api("/api/chat/status");

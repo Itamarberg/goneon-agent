@@ -22,6 +22,9 @@ body { font: 14.5px/1.5 ui-sans-serif, -apple-system, system-ui, sans-serif;
 #panel { background: var(--panel); border-right: 1px solid var(--line);
          display: flex; flex-direction: column; min-height: 0; }
 #panel-head { padding: 16px 16px 12px; border-bottom: 1px solid var(--line); }
+.head-row { display: flex; align-items: center; gap: 10px; }
+.head-row h1 { flex: 1; }
+.btn.small { font-size: 11.5px; padding: 4px 9px; }
 h1 { font-size: 18px; margin: 0 0 2px; letter-spacing: -0.01em; }
 .sub { color: var(--muted); font-size: 12.5px; margin: 0; }
 
@@ -126,6 +129,18 @@ h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: v
 .source a { color: inherit; }
 .blocked-note { font-size: 11.5px; color: var(--bad); margin-top: 5px; }
 
+/* the planner's own rule */
+#own-rule { margin-top: 12px; border: 1px dashed var(--line); border-radius: 8px;
+            padding: 8px 10px; }
+#own-rule summary { font-size: 12.5px; color: var(--accent); font-weight: 500; }
+#own-rule[open] summary { margin-bottom: 8px; }
+#own-rule .field > span { width: 92px; }
+.own-foot { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.own-foot .hint { margin: 0; }
+.own-foot .hint.bad { color: var(--bad); }
+.own-foot .hint.ok { color: var(--ok); }
+.badge.user { color: var(--accent); border-color: currentColor; }
+
 .zone-summary { margin-top: 14px; font-size: 12.5px; color: var(--muted); }
 .bar { height: 6px; border-radius: 3px; background: var(--chip); overflow: hidden; margin: 6px 0; }
 .bar > i { display: block; height: 100%; background: var(--ok); }
@@ -191,4 +206,39 @@ summary { cursor: pointer; font-size: 12px; color: var(--muted); }
   #app { grid-template-columns: 1fr; grid-template-rows: 60vh 40vh; }
   #panel { border-right: none; border-bottom: 1px solid var(--line); }
   #chat { width: auto; left: 12px; }
+}
+
+
+/* ------------------------------------------------------------------ print --
+ * The PDF route is the browser's own "Save as PDF": no extra dependency, and
+ * the output is a real document rather than a screenshot. On screen the report
+ * does not exist; on paper it is the only thing that does.
+ */
+#report { display: none; }
+
+@media print {
+  @page { size: A4; margin: 16mm 14mm; }
+  #app, #chat { display: none !important; }
+  #report { display: block !important; }
+  html, body { height: auto; background: #fff; color: #000; }
+  body { font: 10.5pt/1.45 ui-serif, Georgia, "Times New Roman", serif; }
+
+  #report h1 { font-size: 17pt; margin: 0 0 2pt; }
+  #report .meta { font-size: 9pt; color: #444; margin-bottom: 14pt; }
+  #report h2 { font-size: 11.5pt; margin: 16pt 0 5pt; padding-bottom: 2pt;
+               border-bottom: 0.5pt solid #bbb; }
+  #report table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  #report th { text-align: left; font-weight: 600; border-bottom: 0.5pt solid #bbb;
+               padding: 3pt 4pt; }
+  #report td { padding: 3pt 4pt; vertical-align: top; border-bottom: 0.25pt solid #e0e0e0; }
+  #report td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #report .map { width: 100%; border: 0.5pt solid #bbb; margin-top: 6pt; }
+  #report .note { font-size: 8.5pt; color: #555; }
+  #report .none { font-size: 9pt; color: #555; font-style: italic; }
+  #report ul { margin: 4pt 0; padding-left: 14pt; }
+  #report li { font-size: 9pt; margin-bottom: 2pt; }
+  #report footer { margin-top: 18pt; padding-top: 6pt; border-top: 0.5pt solid #bbb;
+                   font-size: 8.5pt; color: #444; }
+  /* Keep a section and its heading together where the browser allows it. */
+  #report section { break-inside: avoid; }
 }

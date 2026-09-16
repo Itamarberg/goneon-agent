@@ -11,7 +11,10 @@
 <div id="app">
   <aside id="panel">
     <header id="panel-head">
-      <h1>neon-agent</h1>
+      <div class="head-row">
+        <h1>neon-agent</h1>
+        <button class="btn small" id="reset" title="Clear the plan and start again">Start over</button>
+      </div>
       <p class="sub">Place infrastructure on real open data, checked against cited rules.</p>
     </header>
 
@@ -93,6 +96,41 @@
             wins when they conflict.
           </p>
           <div id="catalog" class="catalog"></div>
+
+          <details id="own-rule">
+            <summary>Add your own constraint</summary>
+            <p class="hint">
+              The threshold and the source are yours — nothing here supplies a number.
+              It is added as <b>your own rule</b>, not as a regulation.
+            </p>
+            <label class="field"><span>Rule</span>
+              <input id="own-title" placeholder="e.g. Trees stay clear of the school">
+            </label>
+            <label class="field"><span>Must be</span>
+              <select id="own-type"></select>
+            </label>
+            <label class="field" id="own-layer-field"><span>of / from</span>
+              <select id="own-layer"></select>
+            </label>
+            <label class="field" id="own-distance-field"><span>Distance (m)</span>
+              <input type="number" id="own-distance" min="0" step="0.5" placeholder="25">
+            </label>
+            <label class="field"><span>Source</span>
+              <input id="own-source" placeholder="where this rule comes from">
+            </label>
+            <div class="field">
+              <span>Counts as</span>
+              <div class="segmented" id="own-hard">
+                <button type="button" data-hard="true" data-on="true">must hold</button>
+                <button type="button" data-hard="false">preference</button>
+              </div>
+            </div>
+            <div class="own-foot">
+              <button class="btn primary" id="own-add">Add constraint</button>
+              <span id="own-feedback" class="hint"></span>
+            </div>
+          </details>
+
           <div id="zone-summary" class="zone-summary"></div>
           <div class="step-foot"><button class="btn primary next">Continue</button></div>
         </div>
@@ -122,8 +160,9 @@
         </button>
         <div class="step-body">
           <p class="hint">The constraints and findings travel with the plan.</p>
+          <button class="btn" id="export-pdf" disabled>Print / save as PDF</button>
           <button class="btn" id="export-geojson" disabled>Download GeoJSON</button>
-          <button class="btn" id="export-report" disabled>One-page report</button>
+          <button class="btn" id="export-report" disabled>Markdown report</button>
         </div>
       </section>
     </div>
@@ -155,6 +194,10 @@
     </div>
   </div>
 </div>
+
+<!-- The printable report. Hidden on screen, and the only thing that prints. -->
+<div id="report" aria-hidden="true"></div>
+
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
