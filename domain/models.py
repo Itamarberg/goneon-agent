@@ -83,6 +83,14 @@ class Constraint(Base):
     )
     source: Source
     verified: bool = False
+    default_on: bool = Field(
+        default=False,
+        description=(
+            "Pre-selected when a planner starts. Reserved for geometric sanity that holds for "
+            "any object in any project (not inside a building, not in water); everything "
+            "else is a decision the planner should take deliberately."
+        ),
+    )
     note: str | None = Field(
         default=None,
         description="Caveat shown next to the constraint, e.g. a proxy for a real calculation.",

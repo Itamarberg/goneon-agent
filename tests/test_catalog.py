@@ -103,3 +103,23 @@ def test_ids_match_file_names():
     for path in CATALOG_DIR.glob("*.yaml"):
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert raw["id"] == path.stem
+
+
+def test_default_on_is_reserved_for_geometric_sanity_that_holds_everywhere():
+    # A rule that starts ticked is one the planner never chose. That is only
+    # defensible for physical impossibilities: it must be hard, apply to any
+    # object, and be checkable in every study area — a default that silently
+    # cannot be evaluated somewhere would be a false sense of safety.
+    from data.sources import BY_NAME
+    from data.study_area import STUDY_AREAS
+
+    defaults = [c for c in load_catalog() if c.default_on]
+    assert {c.id for c in defaults} == {"not-on-building", "not-in-water"}
+    for c in defaults:
+        assert c.hard, f"{c.id}: a default must be a hard rule"
+        assert c.applies_to is None, f"{c.id}: a default must apply to any object"
+        assert c.type == "not_within", f"{c.id}: a default excludes ground, nothing more"
+        assert c.source.kind == "convention"
+        assert c.layer in BY_NAME
+        for area_id in STUDY_AREAS:
+            assert unevaluable_reason(c, area_id) is None, f"{c.id} not checkable in {area_id}"
