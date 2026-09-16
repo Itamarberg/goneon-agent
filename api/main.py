@@ -7,11 +7,13 @@ computes geometry or decides a verdict.
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agent import loop as agent_loop
@@ -99,6 +101,25 @@ app = FastAPI(
 if MCP_APP is not None:
     # The same tools the website and the in-app agent use, for any MCP client.
     app.mount("/mcp", MCP_APP)
+
+
+@app.middleware("http")
+async def errors_as_json(request: Request, call_next):
+    """Turn an unhandled exception into a JSON 500 inside the CORS layer.
+
+    Starlette's default 500 is produced outside every middleware, so it carries
+    no CORS headers and the browser reports it as a failed fetch rather than as
+    an error the planner can read and report.
+    """
+    try:
+        return await call_next(request)
+    except Exception as e:  # noqa: BLE001 - this is the last line of defence
+        logging.getLogger(__name__).exception("unhandled error on %s", request.url.path)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"{type(e).__name__}: {e}"[:500]},
+        )
+
 
 app.add_middleware(
     CORSMiddleware,

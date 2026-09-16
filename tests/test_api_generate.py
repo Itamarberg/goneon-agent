@@ -97,3 +97,26 @@ def test_generate_a_route_between_two_routable_points():
     assert 8 < lon < 9 and 47 < lat < 48
     # The whole point of the route: it passes its own hard constraint.
     assert all(f["severity"] != "violation" for f in body["variants"][0]["findings"])
+
+
+def test_an_unhandled_error_reaches_the_browser_as_json_with_cors_headers(monkeypatch):
+    """Starlette's own 500 is built outside the CORS middleware, so a browser on
+    another origin sees "Failed to fetch" and nothing a planner could report."""
+    import api.main as main
+
+    def boom(*_a, **_kw):
+        raise RuntimeError("TopologyException: side location conflict")
+
+    monkeypatch.setattr(main, "generate_points", boom)
+    with TestClient(main.app, raise_server_exceptions=False) as c:
+        r = c.post(
+            "/api/generate",
+            json={
+                "area_id": "langstrasse",
+                "object": {"kind": "tree", "geometry": "point", "count": 3},
+            },
+            headers={"origin": "http://127.0.0.1:5173"},
+        )
+    assert r.status_code == 500
+    assert r.headers.get("access-control-allow-origin") == "*"
+    assert "TopologyException" in r.json()["detail"]
