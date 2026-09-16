@@ -40,8 +40,8 @@ variants, export.
   an importance that decides which one gives way when they conflict.
 - You can add your own rule in the panel — you supply the threshold and the
   source, and it is labelled as yours, not as a regulation.
-- Export as GeoJSON, Markdown, or a printable PDF that carries the map, the
-  constraints with their sources, the trade-offs and what could not be checked.
+- Export as GeoJSON, or as a printable PDF carrying the map, the constraints
+  with their sources, the trade-offs and what could not be checked.
 - **Start over** clears the plan.
 
 The chat is available at every step and required at none.

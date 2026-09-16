@@ -530,7 +530,7 @@ function renderInfeasible(report) {
 /* -------------------------------------------------------------- step 5 ---- */
 
 function setExportEnabled(on) {
-  for (const id of ["export-geojson", "export-report", "export-pdf"]) $(id).disabled = !on;
+  for (const id of ["export-geojson", "export-pdf"]) $(id).disabled = !on;
 }
 
 function download(name, text, type) {
@@ -556,39 +556,6 @@ function exportGeoJSON() {
       type: "Feature", id: f.id, geometry: f.geometry, properties: f.properties,
     })),
   }, null, 2), "application/geo+json");
-}
-
-function exportReport() {
-  const v = state.selectedVariant;
-  const area = state.areas.find((a) => a.id === state.areaId);
-  const rules = chosenConstraints().map((c) =>
-    `- ${c.title} — ${c.hard ? "must hold" : `preference, ${importanceLabel(c.weight)}`}; source: ${c.source.text}`).join("\n");
-  const notEvaluable = v.findings.filter((f) => f.severity === "not_evaluable")
-    .map((f) => `- ${f.constraint_id}: ${f.message}`).join("\n");
-  const tradeoffs = v.tradeoffs.map((t) =>
-    `- ${t.count} × ${t.title} (worst ${t.worst_measured_m} m, asked ${t.required_m} m; ${importanceLabel(t.weight)})`).join("\n");
-
-  download(`neon-report-${v.id}.md`, `# Plan report — ${v.label}
-
-Area: ${area ? area.title : state.areaId}${state.areaPolygon ? " (part of it)" : ""}
-Object: ${labelFor(state.objectKind)}
-Generated: ${new Date().toISOString()}
-
-## Constraints applied
-${rules || "(none)"}
-
-## Result
-${v.features.length} object(s). Metrics: ${JSON.stringify(v.metrics)}
-
-## Trade-offs
-${tradeoffs || "None: every constraint that could be checked is met."}
-
-## Not evaluated
-${notEvaluable || "None."}
-
-This is decision support, not an approval. Every number above came from a
-deterministic check against open data; the sources are listed with each rule.
-`, "text/markdown");
 }
 
 /* ------------------------------------------- the planner's own constraint -- */
@@ -937,7 +904,6 @@ function wireControls() {
 
   $("generate").addEventListener("click", generate);
   $("export-geojson").addEventListener("click", exportGeoJSON);
-  $("export-report").addEventListener("click", exportReport);
   $("export-pdf").addEventListener("click", exportPDF);
   $("reset").addEventListener("click", resetAll);
   $("own-type").addEventListener("change", syncOwnForm);
