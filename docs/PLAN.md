@@ -202,6 +202,10 @@ About 14 hours of work. Ordered by risk; each phase ends deployed.
 | P5 | Website: stepper, variant cards, drag-edit + re-check, export GeoJSON + one-page report | 2.5 | someone who hasn't seen it completes the tutorial unaided |
 | P6 | MCP endpoint, README (use the site / use the API / use MCP / add a constraint) | 0.5 | an MCP client lists and runs `generate_points` against the deployed URL |
 
+**All six phases are implemented.** Not yet done: deploying to Vercel and Render
+(the configs are in the repo, the accounts are not connected), and one end-to-end
+run of the chat against the live model — no API key was available while building.
+
 Cut order if behind: one-page report → line generator variants (keep one) →
 refine-by-chat (keep chat for drafting constraints) → MCP (keep REST).
 
@@ -221,6 +225,8 @@ Then the video (≈ 2 h, §10).
 | 09-16 | No server sessions; state in the browser | Removes persistence, auth and scaling work; share links still work |
 | 09-16 | One dataset (AV Bodenbedeckung) split into five layers by its `artzh` class | Buildings, pavements, roads, parks and water come from one fetch; a layer is a filter, not a new integration |
 | 09-16 | Layers baked into the repo and the image, fetched by a script, not at request time | 100 planners must not hit a public WFS at once; a fetch script keeps the provenance reproducible |
+| 09-16 | scipy added for the line generator | A grid least-cost path over 250k cells is seconds in a Python heap and milliseconds in `scipy.sparse.csgraph` |
+| 09-16 | MCP and the agent SDK are separate optional extras | The deterministic half installs and tests without an API key, and MCP's dependency tree stays opt-in |
 | 09-16 | Not modelled, and said so: magnetic fields (NISV), hydraulics, underground conflicts | Need calculations or data that aren't possible overnight; shown as "proxy" or "cannot be evaluated" |
 
 ## 10. Submission
