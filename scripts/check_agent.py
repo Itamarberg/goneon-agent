@@ -17,6 +17,7 @@ architecture depends on (ADR 0001):
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -31,6 +32,15 @@ try:
     load_dotenv(ROOT / ".env")
 except ImportError:  # pragma: no cover - dotenv ships with uvicorn[standard]
     pass
+
+# A key that is set takes precedence over an `ant auth login` profile — even an
+# empty or placeholder one. Leaving the example value in .env would shadow a
+# working profile and fail with an auth error that points at the wrong thing.
+_key = os.environ.get("ANTHROPIC_API_KEY", "")
+if _key.strip() in ("", "sk-ant-...") or _key.startswith("sk-ant-fake"):
+    os.environ.pop("ANTHROPIC_API_KEY", None)
+    if _key:
+        print("note: ignoring the placeholder ANTHROPIC_API_KEY in .env")
 
 from agent import loop  # noqa: E402
 
@@ -58,8 +68,11 @@ def main() -> int:
 
     if not loop.available():
         print(
-            "ANTHROPIC_API_KEY is not set.\n"
-            "  export ANTHROPIC_API_KEY=sk-ant-...   (or put it in .env)"
+            "No Anthropic credentials found. Either:\n"
+            "  ant auth login                       (OAuth profile, for local development)\n"
+            "  export ANTHROPIC_API_KEY=sk-ant-...  (or uncomment it in .env; a deployment "
+            "needs this)\n\n"
+            "A key that is set always wins over a profile, so do not set both."
         )
         return 2
 
