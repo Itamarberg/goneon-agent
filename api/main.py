@@ -20,7 +20,7 @@ from checks.registry import registered_types
 from checks.zones import compute_zones, zones_as_geojson
 from data.store import LayerNotAvailable, get_features_in, list_layers, study_area_summary
 from data.study_area import STUDY_AREA
-from domain.crs import to_wgs84
+from domain.crs import to_lv95, to_wgs84
 from domain.models import CRS_WGS84, Constraint, Feature, Geometry, ObjectSpec, Variant
 from generate.infeasible import explain_for_line, explain_for_points
 from generate.line import generate_line
@@ -129,6 +129,24 @@ def catalog() -> dict:
             }
         )
     return {"constraints": entries, "types": registered_types()}
+
+
+class ProjectRequest(BaseModel):
+    lon: float
+    lat: float
+
+
+@app.post("/api/project")
+def project(request: ProjectRequest) -> dict:
+    """Turn a map click into LV95 metres.
+
+    The browser only ever has degrees. Rather than ship a projection library to
+    it, the one conversion it needs happens here, next to the one that sends
+    geometry the other way.
+    """
+    point = to_lv95({"type": "Point", "coordinates": [request.lon, request.lat]})
+    x, y = point["coordinates"]
+    return {"x": round(x, 2), "y": round(y, 2), "crs": "EPSG:2056"}
 
 
 class ZonePreviewRequest(BaseModel):

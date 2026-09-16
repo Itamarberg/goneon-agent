@@ -7,7 +7,7 @@ The agent turns that into a planning request, deterministic generators produce
 plan variants on real open data, and every variant is checked against your
 constraints. You compare, edit and decide.
 
-**Status:** in build. P0–P4 done (skeleton, real data, constraints, generators, agent) — see `docs/PLAN.md` §8 for the phases.
+**Status:** in build. P0–P5 done (skeleton, real data, constraints, generators, agent, website) — see `docs/PLAN.md` §8 for the phases.
 
 - [docs/PLAN.md](docs/PLAN.md) — product, generation approach, data, build plan, decision log
 - [ARCHITECTURE.md](ARCHITECTURE.md) — components and contracts

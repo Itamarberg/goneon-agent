@@ -98,3 +98,11 @@ def test_check_reports_an_unevaluable_constraint_instead_of_passing_it():
     assert body["summary"]["not_evaluable"] == 1
     assert body["summary"]["violation"] == 0
     assert body["constraints_checked"][0]["evaluable"] is False
+
+
+def test_project_converts_a_map_click_to_metres():
+    # The browser has degrees; every check needs LV95 metres.
+    r = client.post("/api/project", json={"lon": 8.5313, "lat": 47.3752})
+    body = r.json()
+    assert 2_681_000 < body["x"] < 2_684_000
+    assert 1_247_000 < body["y"] < 1_249_000

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>neon-agent</title>
+<title>neon-agent — infrastructure planning</title>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <link rel="stylesheet" href="app.css">
 </head>
@@ -12,21 +12,105 @@
   <aside id="panel">
     <header>
       <h1>neon-agent</h1>
-      <p class="sub" id="area-desc">Loading study area…</p>
+      <p class="sub" id="area-desc">Loading…</p>
     </header>
-    <section>
-      <h2>Real data in this area</h2>
-      <div id="layers" class="layers"></div>
+
+    <!-- 1. Area -->
+    <section class="step" data-step="1">
+      <h2><span class="num">1</span> Area</h2>
+      <div class="choice">
+        <button class="btn" id="area-whole" data-active="true">Whole quarter</button>
+        <button class="btn" id="area-draw">Pick an area on the map</button>
+      </div>
+      <p class="hint" id="area-hint">Zürich Kreis 5.</p>
+      <div id="area-counts" class="counts"></div>
     </section>
-    <section>
-      <h2>Not available, not invented</h2>
-      <ul id="gaps" class="gaps"></ul>
+
+    <!-- 2. What -->
+    <section class="step" data-step="2">
+      <h2><span class="num">2</span> What do you want to place?</h2>
+      <div class="choice">
+        <button class="btn" id="kind-point" data-active="true">Objects (points)</button>
+        <button class="btn" id="kind-line">A line</button>
+      </div>
+      <div id="point-options">
+        <label class="field">
+          <span>Object</span>
+          <select id="object-kind">
+            <option value="tree">Street trees</option>
+            <option value="bike_rack">Bike racks</option>
+            <option value="bench">Benches</option>
+            <option value="charging_station">Charging stations</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>How many</span>
+          <input type="number" id="object-count" value="20" min="1" max="200">
+        </label>
+      </div>
+      <div id="line-options" hidden>
+        <label class="field">
+          <span>Line</span>
+          <select id="line-kind">
+            <option value="power_line">Power line / cable</option>
+            <option value="pipe">Pipe</option>
+            <option value="path">Path</option>
+          </select>
+        </label>
+        <p class="hint">Click the map to set the start, then the end.</p>
+        <p class="hint" id="line-endpoints">No endpoints set.</p>
+      </div>
     </section>
+
+    <!-- 3. Constraints -->
+    <section class="step" data-step="3">
+      <h2><span class="num">3</span> Constraints</h2>
+      <p class="hint">Tick what the plan must respect. The map shows what is left.</p>
+      <div id="catalog" class="catalog"></div>
+      <div id="zone-summary" class="zone-summary"></div>
+    </section>
+
+    <!-- 4. Generate -->
+    <section class="step" data-step="4">
+      <h2><span class="num">4</span> Generate</h2>
+      <button class="btn primary" id="generate">Generate plan variants</button>
+      <div id="variants" class="variants"></div>
+      <div id="infeasible" class="infeasible" hidden></div>
+    </section>
+
+    <!-- 5. Export -->
+    <section class="step" data-step="5">
+      <h2><span class="num">5</span> Export</h2>
+      <button class="btn" id="export-geojson" disabled>Download GeoJSON</button>
+      <button class="btn" id="export-report" disabled>One-page report</button>
+    </section>
+
     <footer>
+      <details id="layers-panel">
+        <summary>Data layers</summary>
+        <div id="layers" class="layers"></div>
+        <h3>Not available, not invented</h3>
+        <ul id="gaps" class="gaps"></ul>
+      </details>
       <span id="api-state" class="pill">connecting…</span>
     </footer>
   </aside>
-  <div id="map"></div>
+
+  <div id="map-wrap">
+    <div id="map"></div>
+    <div id="chat">
+      <div id="chat-head">
+        <strong>Ask the agent</strong>
+        <span id="chat-state" class="pill small"></span>
+        <button id="chat-toggle" class="icon-btn" title="Hide">–</button>
+      </div>
+      <div id="chat-log"></div>
+      <form id="chat-form">
+        <input id="chat-input" placeholder="e.g. keep the trees 20 m from the school" autocomplete="off">
+        <button class="btn primary" type="submit">Send</button>
+      </form>
+    </div>
+  </div>
 </div>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="config.js"></script>
