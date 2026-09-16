@@ -56,11 +56,18 @@ const post = (path, body) =>
 
 /* ------------------------------------------------------------------ map --- */
 
+// Context layers read as a muted neutral-to-warm ramp so the two brand accents
+// stay reserved for what the planner is deciding: the zones and the plan.
 const LAYER_STYLE = {
-  building: "#8d99ae", sidewalk: "#c9ada7", road: "#adb5bd", green_space: "#52b788",
-  water: "#4cc9f0", tree: "#2d6a4f", school: "#e76f51", kindergarten: "#f4a261",
-  hydrant: "#e63946", transit_stop: "#7209b7", power_line_hv: "#ffb703",
+  building: "#8A8A8A", sidewalk: "#B8A99A", road: "#9AA3AB", green_space: "#3A9E6B",
+  water: "#4CC9F0", tree: "#8CFF9E", school: "#FF8A5B", kindergarten: "#FFC857",
+  hydrant: "#FF4D5E", transit_stop: "#B57BFF", power_line_hv: "#FFD166",
 };
+
+// The brand's two accents carry the meaning: cyan is what you may do, pink is
+// what you may not. Everything else on the map is context.
+const OK = "#3EFFF1";
+const NO = "#F23093";
 const LAYERS_ON = ["building", "school", "transit_stop", "power_line_hv"];
 
 const map = new maplibregl.Map({
@@ -79,8 +86,14 @@ const map = new maplibregl.Map({
       },
     },
     layers: [
-      { id: "background", type: "background", paint: { "background-color": "#f6f5f3" } },
-      { id: "basemap", type: "raster", source: "swisstopo", paint: { "raster-opacity": 0.45 } },
+      { id: "background", type: "background", paint: { "background-color": "#000000" } },
+      // Swapping raster-brightness min and max inverts the light swisstopo
+      // sheet into a dark one, so the basemap sits under the black canvas
+      // instead of fighting it.
+      { id: "basemap", type: "raster", source: "swisstopo",
+        paint: { "raster-opacity": 0.42, "raster-brightness-min": 1,
+                 "raster-brightness-max": 0, "raster-saturation": -1,
+                 "raster-contrast": 0.2 } },
     ],
   },
   center: [8.52, 47.39],
@@ -100,22 +113,22 @@ function addOverlaySources() {
     map.addSource(id, { type: "geojson", data: EMPTY });
   }
   map.addLayer({ id: "zone-allowed-fill", type: "fill", source: "zone-allowed",
-    paint: { "fill-color": "#1f9d55", "fill-opacity": 0.14 } });
+    paint: { "fill-color": OK, "fill-opacity": 0.10 } });
   map.addLayer({ id: "zone-forbidden-fill", type: "fill", source: "zone-forbidden",
-    paint: { "fill-color": "#c0392b", "fill-opacity": 0.18 } });
+    paint: { "fill-color": NO, "fill-opacity": 0.16 } });
   map.addLayer({ id: "study-area-line", type: "line", source: "study-area",
-    paint: { "line-color": "#1f6feb", "line-width": 1.5, "line-dasharray": [3, 2] } });
+    paint: { "line-color": NO, "line-width": 1.5, "line-dasharray": [3, 2] } });
   map.addLayer({ id: "plan-line", type: "line", source: "plan",
-    paint: { "line-color": "#1f6feb", "line-width": 4 } });
+    paint: { "line-color": OK, "line-width": 4 } });
   map.addLayer({ id: "plan-point", type: "circle", source: "plan",
     filter: ["==", ["geometry-type"], "Point"],
     paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 4, 18, 8],
-             "circle-color": "#1f6feb", "circle-stroke-width": 2, "circle-stroke-color": "#fff" } });
+             "circle-color": OK, "circle-stroke-width": 2, "circle-stroke-color": "#000" } });
   map.addLayer({ id: "findings-line", type: "line", source: "findings",
-    paint: { "line-color": "#c0392b", "line-width": 2, "line-dasharray": [2, 1] } });
+    paint: { "line-color": NO, "line-width": 2, "line-dasharray": [2, 1] } });
   map.addLayer({ id: "picked-point", type: "circle", source: "picked",
-    paint: { "circle-radius": 6, "circle-color": "#ffb703", "circle-stroke-width": 2,
-             "circle-stroke-color": "#fff" } });
+    paint: { "circle-radius": 6, "circle-color": "#FFFFFF", "circle-stroke-width": 2,
+             "circle-stroke-color": "#000" } });
 }
 
 // Data layers belong to a study area, so they are torn down and rebuilt on switch.
@@ -149,7 +162,7 @@ function addDataLayer(info) {
     add("-point", { type: "circle",
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 2.5, 18, 5.5],
                "circle-color": colour, "circle-stroke-width": 1,
-               "circle-stroke-color": "rgba(255,255,255,.75)" } });
+               "circle-stroke-color": "rgba(0,0,0,.65)" } });
   }
 
   const row = document.createElement("label");
