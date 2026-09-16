@@ -65,6 +65,25 @@ class TestPointGenerator:
         best = next(v for v in variants if v.id == "points-best_score")
         assert len(best.features) == 20  # soft never costs us objects
 
+    def test_best_fit_variants_trade_constraint_quality_for_spread_in_order(self):
+        """B1, B2, B3 are one dial turned: each step gives up some fit for room.
+
+        A graded preference (distance) is needed for the dial to do anything; a
+        binary one (inside / outside) has every tolerance select the same pool,
+        the three come out identical, and dedup rightly keeps one."""
+        graded = get_constraint("tree-cool-corridor")
+        variants = {
+            v.strategy: v
+            for v in generate_points(STUDY_AREA.polygon, [*TREE_CONSTRAINTS, graded], "tree", 20)
+        }
+        ladder = ["best_score", "best_score_balanced", "best_score_roomy"]
+        present = [variants[k] for k in ladder if k in variants]
+        assert len(present) >= 2, "the ladder collapsed into one variant"
+        costs = [v.metrics["mean_soft_cost"] for v in present]
+        assert costs == sorted(costs), costs
+        for v in present:
+            assert v.description and len(v.features) == 20
+
     def test_importance_decides_which_preference_is_sacrificed(self):
         """A planner ranking two preferences must get a plan that reflects the
         ranking — importance changes the geometry, it is not a label."""

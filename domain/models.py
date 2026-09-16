@@ -185,6 +185,10 @@ class Variant(Base):
     id: str
     label: str
     strategy: str
+    description: str = Field(
+        default="",
+        description="One sentence for the planner: how this variant chose its positions.",
+    )
     features: list[Feature] = Field(default_factory=list)
     metrics: dict[str, float] = Field(default_factory=dict)
     findings: list[Finding] = Field(default_factory=list)

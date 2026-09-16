@@ -64,6 +64,7 @@ def summarise_variant(variant: dict) -> dict:
         "id": variant["id"],
         "label": variant["label"],
         "strategy": variant["strategy"],
+        "description": variant.get("description", ""),
         "object_count": len(variant.get("features", [])),
         "metrics": variant.get("metrics", {}),
         "tradeoffs": variant.get("tradeoffs", []),

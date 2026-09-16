@@ -163,13 +163,12 @@ def _farthest_point_select(
     return chosen, (achieved if math.isfinite(achieved) else floor_spacing_m)
 
 
-# How much worse than the best position a candidate may be and still count as
-# "an equally good place to stand" when spreading within the best ground.
-COST_TOLERANCE = 0.05
-
-
 def _best_fit_select(
-    points: np.ndarray, cost: np.ndarray, target: int, floor_spacing_m: float
+    points: np.ndarray,
+    cost: np.ndarray,
+    target: int,
+    floor_spacing_m: float,
+    tolerance: float,
 ) -> tuple[list[int], float]:
     """Spread within the ground that best satisfies the soft constraints.
 
@@ -177,9 +176,15 @@ def _best_fit_select(
     reached first, because thousands of positions tie at the same cost. So the
     cheap positions are pooled and then sampled for spread: the planner gets
     objects that both sit where the constraints want them and cover the area.
+
+    `tolerance` is the one dial: how much worse than the best position a
+    candidate may be, as a fraction of the cost range, and still count as "an
+    equally good place to stand". Near zero it is the strictest fit; wider, it
+    trades constraint quality for room to spread.
     """
     order = np.argsort(cost, kind="stable")
-    pool = order[cost[order] <= cost[order[0]] + COST_TOLERANCE]
+    best, worst = float(cost[order[0]]), float(cost[order[-1]])
+    pool = order[cost[order] <= best + tolerance * (worst - best) + 1e-9]
     if len(pool) < target * 4:  # too tight to spread within; widen to the cheapest
         pool = order[: max(target * 4, 1)]
 
@@ -249,10 +254,32 @@ def _tradeoffs(
     return sorted(out, key=lambda t: (-t.weight, -t.count))
 
 
+# (letter, label, strategy, best-fit tolerance, what to tell the planner)
 STRATEGIES = (
-    ("A", "Even coverage", "max_count"),
-    ("B", "Best constraint fit", "best_score"),
-    ("C", "Regular rows", "regular"),
+    (
+        "A", "Even coverage", "max_count", None,
+        "Hard rules only: spread as widely as the ground allows. Preferences are ignored, "
+        "so compare against B to see what they cost.",
+    ),
+    (
+        "B1", "Best fit, strict", "best_score", 0.02,
+        "Only the positions that satisfy your preferences best, spread within them.",
+    ),
+    (
+        "B2", "Best fit, balanced", "best_score_balanced", 0.15,
+        "Positions within 15% of the best fit, which gives the objects room to spread "
+        "while still sitting where the preferences want them.",
+    ),
+    (
+        "B3", "Best fit, roomy", "best_score_roomy", 0.4,
+        "Anything in the better half of the ground counts as good enough; the widest "
+        "spread that still leans towards your preferences.",
+    ),
+    (
+        "C", "Regular rows", "regular", None,
+        "Rows from the middle of the area outwards, evenly spaced. A deliberate layout, "
+        "preferences ignored.",
+    ),
 )
 
 
@@ -265,7 +292,7 @@ def generate_points(
     zones: Zones | None = None,
     area_id: str = DEFAULT_AREA_ID,
 ) -> list[Variant]:
-    """Two or three plan variants for point objects. Deterministic.
+    """Up to five plan variants for point objects. Deterministic.
 
     Every variant is verified by the independent checker before it is returned;
     a variant with a hard violation is a generator bug, so it is dropped rather
@@ -286,21 +313,21 @@ def generate_points(
     orders = {
         # Sweep in rows: packs in as many as spacing allows.
         "max_count": _row_major_order(points),
-        # Cheapest positions first: fewest soft-constraint compromises.
-        "best_score": np.lexsort((points[:, 0], points[:, 1], cost)),
         # Rows again, but from the area's centre outwards, which reads as a
         # deliberate layout rather than a corner-first fill.
         "regular": _regular_order(points),
     }
 
     variants: list[Variant] = []
-    for label_id, label, strategy in STRATEGIES:
+    for label_id, label, strategy, tolerance, description in STRATEGIES:
         if strategy == "max_count" and target_count:
             # Even coverage: spread over the whole area rather than filling from
             # one corner until the count is reached.
             chosen, spacing = _farthest_point_select(points, target_count, floor_spacing)
-        elif strategy == "best_score" and target_count:
-            chosen, spacing = _best_fit_select(points, cost, target_count, floor_spacing)
+        elif tolerance is not None and target_count:
+            chosen, spacing = _best_fit_select(
+                points, cost, target_count, floor_spacing, tolerance
+            )
         else:
             chosen, spacing = _select_spread(
                 points, orders[strategy], floor_spacing, target_count, allowed_area
@@ -326,6 +353,7 @@ def generate_points(
                 id=variant_id,
                 label=f"{label_id} — {label}",
                 strategy=strategy,
+                description=description,
                 features=features,
                 metrics={
                     "count": len(features),
