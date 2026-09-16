@@ -11,9 +11,21 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-UV="${UV:-$HOME/.local/bin/uv}"
-command -v uv >/dev/null 2>&1 && UV=uv
-[ -x "$UV" ] || { echo "uv not found. Install it, or set UV=/path/to/uv"; exit 1; }
+# uv may be on PATH or only in ~/.local/bin (which a non-interactive shell does
+# not add). `command -v` resolves both a bare name and a path; `[ -x ]` does not
+# resolve a bare name against PATH, which is what broke this before.
+if [ -z "${UV:-}" ]; then
+  if command -v uv >/dev/null 2>&1; then
+    UV=uv
+  elif [ -x "$HOME/.local/bin/uv" ]; then
+    UV="$HOME/.local/bin/uv"
+  fi
+fi
+command -v "${UV:-uv}" >/dev/null 2>&1 || {
+  echo "uv not found on PATH or in ~/.local/bin. Install it, or set UV=/path/to/uv"
+  exit 1
+}
+UV="${UV:-uv}"
 
 API_PORT="${API_PORT:-8000}"
 SITE_PORT="${SITE_PORT:-5173}"
