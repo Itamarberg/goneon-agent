@@ -499,6 +499,7 @@ function renderVariants(result) {
         <span class="variant-label">${v.label}</span>
         <span class="variant-metrics">${metrics}</span>
       </div>
+      ${v.description ? `<div class="variant-how">${v.description}</div>` : ""}
       ${v.tradeoffs.length
         ? v.tradeoffs.map((t) => `<div class="tradeoff">${t.count} × ${t.title}${
             tradeoffDetail(t)}<span class="w"> · ${importanceLabel(t.weight)}</span></div>`).join("")
@@ -507,7 +508,12 @@ function renderVariants(result) {
     el.addEventListener("click", () => selectVariant(v.id));
     host.append(el);
   }
-  if (result.variants.length) selectVariant(result.variants[0].id);
+  // The best-fit variants are the ones that honour the planner's preferences;
+  // A is the baseline to compare them against, so it leads only when there is
+  // nothing to fit.
+  const preferred = result.variants.find((v) => v.strategy.startsWith("best_score"))
+    || result.variants[0];
+  if (preferred) selectVariant(preferred.id);
   refreshSummaries();
 }
 

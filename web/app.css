@@ -284,6 +284,7 @@ h3 {
 .variant-top { display: flex; align-items: baseline; gap: 8px; }
 .variant-label { font-size: 13px; font-weight: var(--fw-bold); flex: 1; }
 .variant[data-active="true"] .variant-label { color: var(--neon-cyan); }
+.variant-how { font-size: 11.5px; color: var(--text-subtle); margin-top: 4px; }
 .variant-metrics { font-size: 11.5px; color: var(--text-muted);
                    font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .tradeoff { font-size: 11.5px; color: var(--warn); margin-top: 6px; }
