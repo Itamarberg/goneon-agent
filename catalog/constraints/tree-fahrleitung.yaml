@@ -1,0 +1,17 @@
+id: tree-fahrleitung
+title: Tree keeps 2 m from tram masts and overhead contact lines
+type: min_distance
+applies_to: tree
+layer: overhead_contact_line
+params:
+  d_m: 2.0
+hard: true
+source:
+  text: "Stadt Zürich, Standards Stadträume — Bäume und Baumscheiben"
+  url: "https://www.stadt-zuerich.ch/ted/de/index/gsz/planung-und-bau/planungsgrundlagen.html"
+  kind: curated
+verified: false
+note: >-
+  Shipped on purpose although it cannot be checked: VBZ masts and overhead
+  contact lines are not open geodata. The tool reports this constraint as
+  "not evaluable" rather than passing it, so a planner knows it is still open.

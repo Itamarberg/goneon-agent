@@ -1,0 +1,15 @@
+id: tree-spacing
+title: Street trees keep spacing from each other
+type: min_spacing
+applies_to: tree
+params:
+  d_m: 8.0
+hard: true
+source:
+  text: "Stadt Zürich, Standards Stadträume — spacing for a continuous row of street trees."
+  url: "https://www.stadt-zuerich.ch/ted/de/index/gsz/planung-und-bau/planungsgrundlagen.html"
+  kind: curated
+verified: false
+note: >-
+  Spacing depends on species and crown diameter. 8 m is a working default for a
+  medium-crowned street tree; adjust it for the species actually planted.

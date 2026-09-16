@@ -1,0 +1,17 @@
+id: lev-building-clearance
+title: Power line keeps horizontal clearance from buildings
+type: min_distance
+applies_to: power_line
+layer: building
+params:
+  d_m: 5.0
+hard: true
+source:
+  text: "Verordnung über elektrische Leitungen (LeV), SR 734.31, Art. 38 und Anhang 8"
+  url: "https://www.fedlex.admin.ch/eli/cc/1994/1199_1199_1199/de"
+  kind: curated
+# verified stays false until the sentence above is quoted from the source text.
+verified: false
+note: >-
+  The clearance in LeV depends on voltage and construction type. 5 m is the
+  common horizontal figure; confirm the value for the actual line before use.

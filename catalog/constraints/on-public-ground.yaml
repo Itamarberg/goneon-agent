@@ -1,0 +1,12 @@
+id: on-public-ground
+title: Object stands on road, pavement or park land
+type: within
+layer: sidewalk
+hard: false
+source:
+  text: "Planning convention: public furniture goes on public ground."
+  kind: convention
+verified: true
+note: >-
+  Approximated by the pavement layer. Land ownership is not in the open data, so
+  this cannot decide whether a parcel is actually public.

@@ -1,0 +1,17 @@
+id: tree-werkleitung
+title: Tree trunk keeps 2 m from utility lines
+type: min_distance
+applies_to: tree
+layer: power_line_hv
+params:
+  d_m: 2.0
+hard: true
+source:
+  text: "Stadt Zürich, Standards Stadträume — Bäume und Baumscheiben"
+  url: "https://www.stadt-zuerich.ch/ted/de/index/gsz/planung-und-bau/planungsgrundlagen.html"
+  kind: curated
+verified: false
+note: >-
+  The city rule covers all Werkleitungen. Only installations above 36 kV are open
+  data, so this check is partial: a tree that passes it may still sit on a
+  low-voltage cable, a gas main or a sewer. Those layers are not public.

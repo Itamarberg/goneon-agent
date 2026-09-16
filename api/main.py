@@ -10,10 +10,16 @@ import os
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
+from catalog.loader import load_catalog
+from checks.plan import check_features, describe, summarise, unevaluable_reason
+from checks.registry import registered_types
+from checks.zones import compute_zones, zones_as_geojson
 from data.store import LayerNotAvailable, get_features_in, list_layers, study_area_summary
+from data.study_area import STUDY_AREA
 from domain.crs import to_wgs84
-from domain.models import CRS_WGS84
+from domain.models import CRS_WGS84, Constraint, Feature, Geometry
 
 VERSION = "0.1.0"
 
@@ -95,5 +101,78 @@ def layer(
                 "properties": {**f.properties, "kind": f.kind, "source": f.source},
             }
             for f in features[:limit]
+        ],
+    }
+
+
+@app.get("/api/catalog")
+def catalog() -> dict:
+    """The curated constraints, in plain words, with sources and caveats.
+
+    `evaluable` is the honest field: a constraint can be in the catalog, correct,
+    and still impossible to check here because the data is not open.
+    """
+    entries = []
+    for c in load_catalog():
+        reason = unevaluable_reason(c)
+        entries.append(
+            {
+                **c.model_dump(),
+                "description": describe(c),
+                "evaluable": reason is None,
+                "not_evaluable_reason": reason,
+            }
+        )
+    return {"constraints": entries, "types": registered_types()}
+
+
+class ZonePreviewRequest(BaseModel):
+    """Step 3 of the journey: show what the ticked constraints leave available."""
+
+    area: Geometry | None = Field(
+        default=None, description="Polygon in EPSG:2056. Defaults to the whole study area."
+    )
+    constraints: list[Constraint] = Field(default_factory=list)
+
+
+@app.post("/api/zones")
+def zones(request: ZonePreviewRequest) -> dict:
+    """Forbidden, required and allowed areas for a constraint set, in WGS84.
+
+    The generator uses this same function, so what a planner sees here is exactly
+    what step 4 will place into.
+    """
+    area = request.area or STUDY_AREA.polygon
+    computed = compute_zones(area, request.constraints)
+    geo = zones_as_geojson(computed)
+    for key in ("forbidden", "required", "allowed"):
+        if geo[key] is not None:
+            geo[key] = to_wgs84(geo[key])
+    geo["crs_note"] = f"geometry is {CRS_WGS84}; areas are square metres computed in EPSG:2056"
+    return geo
+
+
+class CheckRequest(BaseModel):
+    """Independent verification of a plan, whoever produced it."""
+
+    features: list[Feature]
+    constraints: list[Constraint]
+
+
+@app.post("/api/check")
+def check(request: CheckRequest) -> dict:
+    findings = check_features(request.features, request.constraints)
+    out = []
+    for f in findings:
+        item = f.model_dump()
+        if f.geometry is not None:
+            item["geometry"] = to_wgs84(f.geometry)
+        out.append(item)
+    return {
+        "findings": out,
+        "summary": summarise(findings),
+        "constraints_checked": [
+            {"id": c.id, "description": describe(c), "evaluable": unevaluable_reason(c) is None}
+            for c in request.constraints
         ],
     }

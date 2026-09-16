@@ -1,0 +1,18 @@
+id: nisv-sensitive-use
+title: Power line keeps distance from schools (proxy for the sensitive-use limit)
+type: min_distance
+applies_to: power_line
+layer: school
+params:
+  d_m: 0.0
+hard: false
+source:
+  text: "Verordnung über den Schutz vor nichtionisierender Strahlung (NISV), SR 814.710, Anhang 1"
+  url: "https://www.fedlex.admin.ch/eli/cc/1999/393/de"
+  kind: curated
+verified: false
+note: >-
+  NISV sets a magnetic flux density limit (1 µT) at places of sensitive use, not
+  a distance. A distance is only a proxy; real compliance needs a field
+  calculation for the specific line. The planner must set the distance — there is
+  no default, because there is no cited number to default to.
