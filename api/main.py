@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import os
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from agent import loop as agent_loop
+from api import ratelimit
 from catalog.loader import load_catalog
 from checks.plan import check_features, describe, summarise, unevaluable_reason
 from checks.registry import registered_types
@@ -239,4 +241,66 @@ def generate(request: GenerateRequest) -> dict:
     return {
         "variants": [_variant_for_map(v) for v in variants],
         "infeasibility": None,
+    }
+
+
+class ChatRequest(BaseModel):
+    """One turn of the planning conversation.
+
+    The whole history comes from the browser: there is no server-side session,
+    so a share link or a reload loses nothing and the API scales by adding
+    containers (docs/PLAN.md §7).
+    """
+
+    messages: list[dict] = Field(..., description="Full conversation so far.")
+    area: Geometry | None = None
+    object: ObjectSpec | None = None
+    constraints: list[Constraint] = Field(
+        default_factory=list, description="What the planner has confirmed in the UI."
+    )
+
+
+@app.get("/api/chat/status")
+def chat_status() -> dict:
+    """Whether chat is configured. The rest of the product does not need a key."""
+    return {"available": agent_loop.available(), "model": agent_loop.MODEL}
+
+
+@app.post("/api/chat")
+def chat(request: ChatRequest, http_request: Request) -> dict:
+    """Ask the agent. It calls the same tools the UI does and explains the results.
+
+    Geometry the tools produced is returned alongside the text, reprojected for
+    the map. The model never sees coordinates and never invents them.
+    """
+    client_id = http_request.client.host if http_request.client else "unknown"
+    allowed, retry_after = ratelimit.check(client_id)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Chat is rate limited. Try again in {retry_after} s.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    try:
+        reply = agent_loop.run_turn(
+            messages=request.messages,
+            area=request.area,
+            object_spec=request.object,
+            constraints=[c.model_dump() for c in request.constraints],
+        )
+    except agent_loop.AgentUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+    zones = reply.zones
+    if zones:
+        zones = {k: (to_wgs84(v) if v else None) for k, v in zones.items()}
+
+    return {
+        "reply": reply.text,
+        "tool_calls": reply.tool_calls,
+        "variants": [_variant_for_map(Variant.model_validate(v)) for v in reply.variants],
+        "zones": zones,
+        "proposals": reply.proposals,
+        "warnings": reply.warnings,
     }

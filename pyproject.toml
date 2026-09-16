@@ -15,7 +15,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-agent = ["anthropic>=0.40", "mcp>=1.1"]
+# Split on purpose: the geometry and the agent install independently, so the
+# deterministic core can be developed and tested without an API key, and the MCP
+# server's heavier dependency tree is opt-in.
+agent = ["anthropic>=0.69"]
+mcp = ["mcp>=1.1"]
 
 [dependency-groups]
 dev = ["pytest>=8.3", "httpx>=0.27", "ruff>=0.7"]
