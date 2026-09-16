@@ -11,6 +11,8 @@ but differ in what they optimise, which is what gives the planner a choice.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import shapely
 from shapely.geometry.base import BaseGeometry
@@ -25,6 +27,15 @@ from generate.scoring import cost_surface
 # tree and keeps a 1 km² area at ~250k candidates before filtering.
 GRID_STEP_M = 2.0
 MAX_CANDIDATES = 400_000
+
+# When a planner asks for 12 trees in a square kilometre, the binding constraint
+# spacing (say 8 m) is not what they mean by "12 trees here" — taking the first
+# 12 candidates in sweep order puts them all in one row along the edge. So the
+# objects are spread over the ground that is actually available: an even layout
+# of n objects over an area A sits about sqrt(A/n) apart, and this backs off
+# from that until the target can be met.
+SPREAD_FACTOR = 0.85
+SPREAD_BACKOFF = 0.7
 
 
 def candidate_grid(allowed: BaseGeometry, step_m: float = GRID_STEP_M) -> np.ndarray:
@@ -80,6 +91,100 @@ def _greedy_select(
         if len(taken) >= target:
             break
     return taken
+
+
+def _spread_spacing(allowed_area_m2: float, target: int | None, floor_m: float) -> float:
+    """Spacing that distributes `target` objects over the available ground.
+
+    Never below the floor, which is whatever min_spacing the constraints (or the
+    planner) require: spreading is a preference, the constraint is not.
+    """
+    if not target or target <= 1 or allowed_area_m2 <= 0:
+        return floor_m
+    return max(floor_m, SPREAD_FACTOR * math.sqrt(allowed_area_m2 / target))
+
+
+def _select_spread(
+    points: np.ndarray,
+    order: np.ndarray,
+    floor_spacing_m: float,
+    target: int | None,
+    allowed_area_m2: float,
+) -> tuple[list[int], float]:
+    """Pick objects spread across the area, relaxing the spread until they fit.
+
+    Returns the chosen indices and the spacing actually achieved, which the
+    variant reports — "12 trees, 178 m apart" is a fact a planner can judge.
+    """
+    if target is None:
+        return _greedy_select(points, order, floor_spacing_m, len(points)), floor_spacing_m
+
+    spacing = _spread_spacing(allowed_area_m2, target, floor_spacing_m)
+    while True:
+        chosen = _greedy_select(points, order, spacing, target)
+        if len(chosen) >= target or spacing <= floor_spacing_m + 1e-9:
+            return chosen, spacing
+        spacing = max(floor_spacing_m, spacing * SPREAD_BACKOFF)
+
+
+def _farthest_point_select(
+    points: np.ndarray, target: int, floor_spacing_m: float
+) -> tuple[list[int], float]:
+    """Place each object as far as possible from the ones already placed.
+
+    Greedy sweep order fills the first row and stops, which is why 12 trees came
+    out in a line along one edge. Farthest-point sampling instead covers the
+    whole area at any count, and is deterministic: it starts from the candidate
+    nearest the centre of the available ground.
+
+    Returns the chosen indices and the smallest gap between any two of them.
+    """
+    centre = points.mean(axis=0)
+    start = int(np.argmin(np.hypot(points[:, 0] - centre[0], points[:, 1] - centre[1])))
+    chosen = [start]
+
+    # distance from every candidate to the nearest chosen object, updated per pick
+    nearest = np.hypot(points[:, 0] - points[start, 0], points[:, 1] - points[start, 1])
+    achieved = float("inf")
+
+    while len(chosen) < target:
+        pick = int(np.argmax(nearest))
+        gap = float(nearest[pick])
+        if gap < floor_spacing_m:
+            # Everything left is too close to something already placed; the
+            # min_spacing constraint wins over the wish to spread.
+            break
+        chosen.append(pick)
+        achieved = min(achieved, gap)
+        nearest = np.minimum(
+            nearest, np.hypot(points[:, 0] - points[pick, 0], points[:, 1] - points[pick, 1])
+        )
+
+    return chosen, (achieved if math.isfinite(achieved) else floor_spacing_m)
+
+
+# How much worse than the best position a candidate may be and still count as
+# "an equally good place to stand" when spreading within the best ground.
+COST_TOLERANCE = 0.05
+
+
+def _best_fit_select(
+    points: np.ndarray, cost: np.ndarray, target: int, floor_spacing_m: float
+) -> tuple[list[int], float]:
+    """Spread within the ground that best satisfies the soft constraints.
+
+    Ranking by cost alone puts every object in whichever street the sweep order
+    reached first, because thousands of positions tie at the same cost. So the
+    cheap positions are pooled and then sampled for spread: the planner gets
+    objects that both sit where the constraints want them and cover the area.
+    """
+    order = np.argsort(cost, kind="stable")
+    pool = order[cost[order] <= cost[order[0]] + COST_TOLERANCE]
+    if len(pool) < target * 4:  # too tight to spread within; widen to the cheapest
+        pool = order[: max(target * 4, 1)]
+
+    local, gap = _farthest_point_select(points[pool], target, floor_spacing_m)
+    return [int(pool[i]) for i in local], gap
 
 
 def _spacing_from(constraints: list[Constraint], fallback: float | None) -> float:
@@ -143,9 +248,9 @@ def _tradeoffs(
 
 
 STRATEGIES = (
-    ("A", "Most objects", "max_count"),
+    ("A", "Even coverage", "max_count"),
     ("B", "Best constraint fit", "best_score"),
-    ("C", "Even spacing", "regular"),
+    ("C", "Regular rows", "regular"),
 )
 
 
@@ -173,8 +278,8 @@ def generate_points(
         return []
 
     cost, _scored_with = cost_surface(points, constraints, area_id)
-    spacing = _spacing_from(constraints, spacing_m)
-    target = target_count or len(points)
+    floor_spacing = _spacing_from(constraints, spacing_m)
+    allowed_area = zones.allowed.area
 
     orders = {
         # Sweep in rows: packs in as many as spacing allows.
@@ -188,7 +293,16 @@ def generate_points(
 
     variants: list[Variant] = []
     for label_id, label, strategy in STRATEGIES:
-        chosen = _greedy_select(points, orders[strategy], spacing, target)
+        if strategy == "max_count" and target_count:
+            # Even coverage: spread over the whole area rather than filling from
+            # one corner until the count is reached.
+            chosen, spacing = _farthest_point_select(points, target_count, floor_spacing)
+        elif strategy == "best_score" and target_count:
+            chosen, spacing = _best_fit_select(points, cost, target_count, floor_spacing)
+        else:
+            chosen, spacing = _select_spread(
+                points, orders[strategy], floor_spacing, target_count, allowed_area
+            )
         if not chosen:
             continue
         variant_id = f"points-{strategy}"
@@ -214,7 +328,9 @@ def generate_points(
                 metrics={
                     "count": len(features),
                     "mean_soft_cost": round(float(np.mean(cost[chosen])), 3),
-                    "min_spacing_m": spacing,
+                    # What the constraints required, and what the layout achieved.
+                    "required_spacing_m": round(floor_spacing, 1),
+                    "achieved_spacing_m": round(spacing, 1),
                     "candidates_considered": len(points),
                 },
                 findings=findings,

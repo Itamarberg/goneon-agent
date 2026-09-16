@@ -77,6 +77,38 @@ class TestPointGenerator:
         t = worst.tradeoffs[0]
         assert t.count > 1 and t.title
 
+    def test_objects_are_spread_over_the_area_not_lined_up_on_one_edge(self):
+        """The bug a planner spotted: 12 trees in a 1 km² quarter came back as a
+        single 148 m row hugging the bottom edge, because the greedy sweep filled
+        the first row and stopped at the target. Count and legality were both
+        fine, which is why no test caught it."""
+        variants = generate_points(STUDY_AREA.polygon, TREE_CONSTRAINTS, "tree", 12)
+        spreads = {}
+        for v in variants:
+            xy = np.array([f.geometry["coordinates"] for f in v.features])
+            width = xy[:, 0].max() - xy[:, 0].min()
+            height = xy[:, 1].max() - xy[:, 1].min()
+            spreads[v.id] = (width, height)
+            # Nothing may come back as a line.
+            assert height > 50, f"{v.id} is {height:.0f} m tall — objects in one row"
+            assert width > 50, f"{v.id} is {width:.0f} m wide"
+
+        # The "even coverage" variant must genuinely cover the quarter.
+        width, height = spreads["points-max_count"]
+        assert width * height > 0.5e6, "even coverage spans less than half the area"
+
+    def test_spread_never_breaks_the_spacing_constraint(self):
+        # Spreading is a preference; min_spacing is a rule. It must still hold.
+        required = get_constraint("tree-spacing").params["d_m"]
+        for v in generate_points(STUDY_AREA.polygon, TREE_CONSTRAINTS, "tree", 25):
+            assert v.metrics["achieved_spacing_m"] >= required
+            assert not has_hard_violation(v.findings)
+
+    def test_a_large_target_still_packs_in(self):
+        # Spreading must not stop the generator reaching a count that fits.
+        variants = generate_points(STUDY_AREA.polygon, TREE_CONSTRAINTS, "tree", 60)
+        assert all(len(v.features) == 60 for v in variants)
+
     def test_target_count_is_respected_and_never_exceeded(self):
         variants = generate_points(STUDY_AREA.polygon, TREE_CONSTRAINTS, "tree", 3)
         assert all(len(v.features) == 3 for v in variants)
