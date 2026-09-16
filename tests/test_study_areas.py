@@ -149,3 +149,20 @@ def test_a_feature_outside_the_area_is_still_checked_honestly():
     )
     findings = check_features([far], [get_constraint("on-public-ground")], "langstrasse")
     assert findings and findings[0].severity == "warning"
+
+
+def test_every_layer_in_every_area_is_valid_geometry_after_loading():
+    """Regression: four sidewalk polygons in Escher-Wyss had self-touching rings,
+    GEOS refused to union them, and generating trees there was a 500."""
+    from checks.geometry import layer_union
+    from data.sources import BY_NAME
+    from data.store import LayerNotAvailable, geometries
+
+    for area_id in STUDY_AREAS:
+        for name in BY_NAME:
+            try:
+                geoms = geometries(name, area_id)
+            except LayerNotAvailable:
+                continue
+            assert all(g.is_valid for g in geoms), f"{name} in {area_id}"
+            assert not layer_union(name, area_id).is_empty

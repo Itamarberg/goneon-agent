@@ -11,6 +11,7 @@ import json
 from functools import cache
 from pathlib import Path
 
+from shapely import make_valid
 from shapely.geometry import shape
 from shapely.strtree import STRtree
 
@@ -85,7 +86,12 @@ def _index(name: str, area_id: str = DEFAULT_AREA_ID) -> tuple[STRtree, list[Fea
     half of that cost, so the parsed geometries are cached alongside the tree.
     """
     layer = load_layer(name, area_id)
-    geoms = [shape(f.geometry) for f in layer.features]
+    # The cadastral data ships a few self-touching rings (a road polygon whose
+    # boundary pinches at one vertex, for instance). GEOS refuses to union or
+    # test containment against them, and one such polygon in a layer took the
+    # whole generator down for that study area. Repairing here, once, means
+    # every check and generator sees the same valid geometry.
+    geoms = [make_valid(shape(f.geometry)) for f in layer.features]
     return STRtree(geoms), layer.features, geoms
 
 
