@@ -39,3 +39,11 @@ def test_missing_layer_explains_why():
     r = client.get("/api/layers/underground_utility")
     assert r.status_code == 404
     assert "reason" in r.json()["detail"]
+
+
+def test_the_root_points_at_the_docs_and_the_website():
+    # Hitting the API port in a browser used to return a bare "Not Found".
+    body = client.get("/").json()
+    assert body["openapi_docs"] == "/docs"
+    assert "static site" in body["note"]
+    assert body["endpoints"]["study_area"] == "/api/area"

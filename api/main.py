@@ -108,6 +108,37 @@ app.add_middleware(
 )
 
 
+@app.get("/")
+def index() -> dict:
+    """A signpost.
+
+    This port serves the API, not the website — the page is a static site on its
+    own origin. Landing here with a bare "Not Found" tells you nothing, so say
+    what is where.
+    """
+    return {
+        "service": "neon-agent API",
+        "version": VERSION,
+        "note": (
+            "This is the API. The planner website is a separate static site "
+            "(locally: python3 -m http.server -d web 5173)."
+        ),
+        "openapi_docs": "/docs",
+        "endpoints": {
+            "health": "/api/health",
+            "study_area": "/api/area",
+            "layers": "/api/layers",
+            "catalog": "/api/catalog",
+            "zones": "POST /api/zones",
+            "generate": "POST /api/generate",
+            "check": "POST /api/check",
+            "chat": "POST /api/chat",
+            "chat_status": "/api/chat/status",
+            "mcp": "/mcp/" if MCP_APP is not None else None,
+        },
+    }
+
+
 @app.get("/api/health")
 def health() -> dict:
     """Liveness probe, and what the static site uses to prove it reached the API."""
