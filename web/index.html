@@ -149,6 +149,17 @@
           <span class="step-summary"></span>
         </button>
         <div class="step-body">
+          <div class="dial">
+            <label for="fit">
+              <span>Best fit: <b id="fit-value">5%</b></span>
+              <span class="dial-ends"><em>strict</em><em>roomy</em></span>
+            </label>
+            <input type="range" id="fit" min="0" max="60" step="1" value="5"
+                   aria-label="How far from the best fit a position may be and still count as good ground">
+            <p class="hint">How far from the best position for your preferences a spot may
+              be and still count as good ground for variant B. Strict keeps the objects where
+              the preferences want them; roomy spreads them out.</p>
+          </div>
           <button class="btn primary wide" id="generate">Generate plan variants</button>
           <div id="variants" class="variants"></div>
           <div id="infeasible" class="infeasible" hidden></div>

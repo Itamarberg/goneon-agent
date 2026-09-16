@@ -26,6 +26,7 @@ const state = {
   geometry: "point",
   objectKind: "tree",
   count: 20,
+  fitTolerance: 0.05, // the dial for variant B, 0 strict .. 1 anything goes
   start: null,
   end: null,
   picked: [],
@@ -460,7 +461,7 @@ async function generate() {
       : { kind: state.objectKind, geometry: "line", start: state.start, end: state.end };
     const result = await post("/api/generate", {
       area: state.areaPolygon, area_id: state.areaId, object: spec,
-      constraints: chosenConstraints(),
+      constraints: chosenConstraints(), fit_tolerance: state.fitTolerance,
     });
     state.variants = result.variants;
     renderVariants(result);
@@ -712,6 +713,9 @@ async function resetAll() {
   $("object-kind").value = "tree";
   $("line-kind").value = "power_line";
   $("object-count").value = "20";
+  state.fitTolerance = 0.05;
+  $("fit").value = "5";
+  $("fit-value").textContent = "5%";
   $("kind-point").dataset.active = "true";
   $("kind-line").dataset.active = "false";
   $("point-options").hidden = false;
@@ -951,6 +955,15 @@ function wireControls() {
   $("export-geojson").addEventListener("click", exportGeoJSON);
   $("export-pdf").addEventListener("click", exportPDF);
   $("reset").addEventListener("click", resetAll);
+
+  $("fit").addEventListener("input", (e) => {
+    state.fitTolerance = Number(e.target.value) / 100;
+    $("fit-value").textContent = `${e.target.value}%`;
+  });
+  // Regenerate on release, not on every tick: a drag is one decision.
+  $("fit").addEventListener("change", () => {
+    if (state.variants.length) generate();
+  });
   $("own-type").addEventListener("change", syncOwnForm);
   $("own-add").addEventListener("click", addOwnConstraint);
   for (const button of $("own-hard").querySelectorAll("button")) {

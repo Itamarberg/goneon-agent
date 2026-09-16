@@ -272,6 +272,36 @@ h3 {
 .bar > i { display: block; height: 100%; background: var(--neon-cyan); }
 .zone-summary b { color: var(--text); font-variant-numeric: tabular-nums; }
 
+/* the planner's dial for variant B */
+.dial { margin: 4px 0 14px; }
+.dial label { display: flex; justify-content: space-between; align-items: baseline;
+              font-size: 12.5px; margin-bottom: 4px; }
+.dial label b { color: var(--neon-cyan); font-family: var(--font-mono); font-weight: var(--fw-bold); }
+.dial-ends { display: inline-flex; gap: 14px; }
+.dial-ends em { font-style: normal; font-size: 10.5px; text-transform: uppercase;
+                letter-spacing: 0.08em; color: var(--text-subtle); }
+.dial input[type=range] {
+  width: 100%; margin: 0; appearance: none; height: 22px; background: transparent;
+  cursor: pointer;
+}
+.dial input[type=range]::-webkit-slider-runnable-track {
+  height: 3px; background: var(--gray-700); border-radius: var(--radius-pill);
+}
+.dial input[type=range]::-webkit-slider-thumb {
+  appearance: none; width: 18px; height: 18px; margin-top: -7.5px;
+  border-radius: 50%; background: var(--neon-cyan); border: 2px solid var(--neon-black);
+}
+.dial input[type=range]::-moz-range-track {
+  height: 3px; background: var(--gray-700); border-radius: var(--radius-pill);
+}
+.dial input[type=range]::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--neon-cyan); border: 2px solid var(--neon-black);
+}
+.dial input[type=range]:focus-visible { outline: none; }
+.dial input[type=range]:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--neon-cyan); outline-offset: 2px; }
+.dial .hint { margin: 6px 0 0; }
+
 /* variants */
 .variants { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
 .variant {
