@@ -281,7 +281,6 @@ async function selectArea(areaId) {
 
   const catalog = await api(`/api/catalog?area_id=${areaId}`);
   state.catalog = catalog.constraints;
-  applyDefaultRules();
   renderCatalog();
   refreshZones();
   refreshSummaries();
@@ -289,18 +288,24 @@ async function selectArea(areaId) {
 
 /* -------------------------------------------------------------- step 3 ---- */
 
-/* Geometric sanity (not inside a building, not in water) starts ticked: a
- * planner should never see trees in the Limmat because they did not think to
- * forbid it. Untick it and it stays off until "Start over". */
+/* Hard rules — regulations and physical impossibilities — start ticked: a
+ * planner should never see trees in the Limmat, or on a cable, because they
+ * did not think to forbid it. A rule the planner unticks stays off until
+ * "Start over". Rules meant for another object kind are dropped, so switching
+ * from trees to benches does not carry the tree rules along silently. */
 function applyDefaultRules() {
+  const fits = (c) => !c.applies_to || c.applies_to === state.objectKind;
+  for (const [id, entry] of state.constraints) {
+    if (!fits(entry.constraint)) state.constraints.delete(id);
+  }
   for (const c of state.catalog) {
-    if (!c.default_on || state.constraints.has(c.id) || state.dismissed.has(c.id)) continue;
-    if (c.applies_to && c.applies_to !== state.objectKind) continue;
+    if (!c.hard || !fits(c) || state.constraints.has(c.id) || state.dismissed.has(c.id)) continue;
     state.constraints.set(c.id, { constraint: c, hard: c.hard, weight: 1 });
   }
 }
 
 function renderCatalog() {
+  applyDefaultRules();
   const host = $("catalog");
   host.innerHTML = "";
   const relevant = state.catalog.filter((c) => !c.applies_to || c.applies_to === state.objectKind);
@@ -909,10 +914,14 @@ function wireControls() {
   $("object-kind").addEventListener("change", (e) => {
     state.objectKind = e.target.value;
     renderCatalog();
+    refreshZones();
+    refreshSummaries();
   });
   $("line-kind").addEventListener("change", (e) => {
     state.objectKind = e.target.value;
     renderCatalog();
+    refreshZones();
+    refreshSummaries();
   });
   $("object-count").addEventListener("change", (e) => {
     state.count = e.target.value;
