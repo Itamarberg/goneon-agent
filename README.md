@@ -125,6 +125,17 @@ The chat needs `ANTHROPIC_API_KEY`. Everything else — map, constraints,
 generation, checks, export, MCP — works without one, and `/api/chat/status`
 says which you have.
 
+```sh
+cp .env.example .env                      # put your key in it; .env is gitignored
+uv run --extra agent python scripts/check_agent.py    # live check, a few cents
+uv run uvicorn api.main:app --env-file .env --reload
+```
+
+`scripts/check_agent.py` is the one test that needs a model. It asks the agent
+four real planner questions and checks the guardrails held: the plan came from
+the generator, no threshold was invented, a drafted constraint stayed
+unconfirmed, and an uncheckable rule was reported as such.
+
 The layers in `data/layers/` are committed. Re-fetch them only if the study area
 changes:
 
