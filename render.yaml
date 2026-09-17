@@ -2,6 +2,10 @@ services:
   - type: web
     name: neon-agent-api
     runtime: docker
+    # Free tier sleeps after ~15 min idle; the first request back takes ~30 s.
+    plan: free
+    # Zurich users, Zurich data.
+    region: frankfurt
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
     envVars:
