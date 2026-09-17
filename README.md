@@ -123,7 +123,7 @@ verified: false             # true only once the source sentence is quoted
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.
 
 ```sh
-uv sync --extra agent --extra mcp    # install
+uv sync --extra mcp                  # install
 ./scripts/dev.sh                     # starts both servers, prints the URL
 ```
 
@@ -149,7 +149,7 @@ says which you have.
 
 ```sh
 cp .env.example .env                      # put your key in it; .env is gitignored
-uv run --extra agent python scripts/check_agent.py    # live check, a few cents
+uv run python scripts/check_agent.py    # live check, a few cents
 uv run uvicorn api.main:app --env-file .env --reload
 ```
 
@@ -167,15 +167,28 @@ uv run python scripts/fetch_layers.py
 
 ## Deployment
 
-`web/` is static on Vercel; the API is one Dockerfile on Render with the data
-baked into the image, so nothing calls a third-party WFS at request time.
+One Vercel project runs the whole thing: the FastAPI app is a single function
+(`[tool.vercel]` in `pyproject.toml` names it), the website in `web/` is served
+from the CDN, and the data layers are inside the bundle, so nothing calls a
+third-party WFS at request time.
 
-| Variable | For |
-|---|---|
-| `ALLOWED_ORIGINS` | The site's origin, for CORS |
-| `ANTHROPIC_API_KEY` | Chat only; never reaches the browser |
-| `MCP_ALLOWED_HOSTS` | Hostnames MCP clients may use; `*` disables the check |
-| `NEON_MODEL` | Defaults to `claude-opus-5` |
+1. [vercel.com/new](https://vercel.com/new) → import `Itamarberg/goneon-agent`.
+   Framework is detected as FastAPI; leave the build settings alone.
+2. Environment variables, before the first deploy:
+
+   | Variable | For |
+   |---|---|
+   | `ANTHROPIC_API_KEY` | Chat only; never reaches the browser. Without it the chat says it is off and everything else works. |
+   | `NEON_MODEL` | Optional. Defaults to `claude-opus-5`. |
+   | `ALLOWED_ORIGINS` | Optional. Defaults to `*`; the site and the API share an origin. |
+
+3. Deploy. The first request after a cold start takes a few seconds (the
+   geometry stack imports, the layers load); after that the function stays warm.
+
+MCP is not mounted on Vercel: the `mcp` extra is not installed there, and the
+streamable-HTTP transport keeps sessions that a serverless function cannot hold
+across instances. For MCP, run the container (`Dockerfile`, `render.yaml`) and
+set `MCP_ALLOWED_HOSTS` to its hostname.
 
 ## Data
 

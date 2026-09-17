@@ -1,5 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "outputDirectory": "web",
-  "cleanUrls": true
+  "regions": ["fra1"],
+  "functions": {
+    "api/main.py": {
+      "maxDuration": 120,
+      "memory": 2048,
+      "excludeFiles": "{tests/**,scripts/**,docs/**,.venv/**,**/__pycache__/**,*.egg-info/**,Dockerfile,render.yaml}"
+    }
+  }
 }
