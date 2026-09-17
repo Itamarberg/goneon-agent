@@ -7,9 +7,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# The source has to be here before the install: `pip install .` builds this
+# project, and setuptools resolves every package in pyproject.toml's `packages`
+# list off the filesystem. Copying it afterwards fails the build.
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir ".[agent,mcp]"
-
 COPY domain/ ./domain/
 COPY checks/ ./checks/
 COPY catalog/ ./catalog/
@@ -19,6 +20,8 @@ COPY tools/ ./tools/
 COPY agent/ ./agent/
 COPY api/ ./api/
 COPY mcp_server/ ./mcp_server/
+
+RUN pip install --no-cache-dir ".[agent,mcp]"
 
 EXPOSE 8000
 # Render supplies $PORT.
