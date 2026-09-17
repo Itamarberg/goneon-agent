@@ -12,13 +12,16 @@ dependencies = [
     "pyyaml>=6.0",
     "pyproj>=3.7",
     "scipy>=1.18.1",
+    # The SDK is a core dependency; the *key* is optional. Without a key the
+    # chat reports itself off and everything else works. A deployment that
+    # installs only the core (Vercel installs from this list) must still be able
+    # to talk to the model once the key is set.
+    "anthropic>=0.69",
 ]
 
 [project.optional-dependencies]
-# Split on purpose: the geometry and the agent install independently, so the
-# deterministic core can be developed and tested without an API key, and the MCP
-# server's heavier dependency tree is opt-in.
-agent = ["anthropic>=0.69"]
+# MCP is opt-in: its dependency tree is heavier, and a serverless deployment
+# cannot keep the sessions it needs across instances.
 mcp = [
     "mcp>=2.0",
     # Not a runtime requirement: cryptography publishes no x86_64 macOS wheel for
@@ -32,6 +35,15 @@ dev = ["pytest>=8.3", "httpx>=0.27", "ruff>=0.7"]
 
 [tool.setuptools]
 packages = ["domain", "checks", "catalog", "data", "generate", "tools", "agent", "api", "mcp_server"]
+
+# Vercel: one function running the FastAPI app, the website promoted to the CDN.
+[tool.vercel]
+entrypoint = "api.main:app"
+
+[tool.vercel.fastapi.static]
+# The app has top-level middleware, which would otherwise keep the site inside
+# the function. The site needs no middleware; serve it from the CDN.
+cdn = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

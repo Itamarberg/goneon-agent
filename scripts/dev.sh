@@ -38,7 +38,7 @@ cleanup() { kill 0 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 
 echo "starting API on :$API_PORT"
-"$UV" run --extra agent uvicorn api.main:app --port "$API_PORT" "${ENV_ARGS[@]}" --reload &
+"$UV" run uvicorn api.main:app --port "$API_PORT" "${ENV_ARGS[@]}" --reload &
 
 echo "starting site on :$SITE_PORT"
 python3 -m http.server -d web "$SITE_PORT" --bind 127.0.0.1 >/dev/null 2>&1 &

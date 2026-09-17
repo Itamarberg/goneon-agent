@@ -531,6 +531,7 @@ name = "neon-agent"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "anthropic" },
     { name = "fastapi" },
     { name = "numpy" },
     { name = "pydantic" },
@@ -542,9 +543,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-agent = [
-    { name = "anthropic" },
-]
 mcp = [
     { name = "cryptography", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'" },
     { name = "mcp" },
@@ -559,7 +557,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anthropic", marker = "extra == 'agent'", specifier = ">=0.69" },
+    { name = "anthropic", specifier = ">=0.69" },
     { name = "cryptography", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'mcp'", specifier = "<46" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2.0" },
@@ -571,7 +569,7 @@ requires-dist = [
     { name = "shapely", specifier = ">=2.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
-provides-extras = ["agent", "mcp"]
+provides-extras = ["mcp"]
 
 [package.metadata.requires-dev]
 dev = [
