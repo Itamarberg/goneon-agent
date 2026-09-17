@@ -41,9 +41,19 @@ def test_missing_layer_explains_why():
     assert "reason" in r.json()["detail"]
 
 
-def test_the_root_points_at_the_docs_and_the_website():
-    # Hitting the API port in a browser used to return a bare "Not Found".
-    body = client.get("/").json()
+def test_the_api_prefix_points_at_the_docs_and_the_website():
+    # Hitting the API prefix in a browser used to return a bare "Not Found".
+    body = client.get("/api").json()
     assert body["openapi_docs"] == "/docs"
-    assert "static site" in body["note"]
     assert body["endpoints"]["study_area"] == "/api/area"
+
+
+def test_the_root_serves_the_website_from_the_same_origin():
+    # One origin: the page, its script and the API. What Vercel serves from its
+    # CDN, uvicorn serves from web/ — the same files either way.
+    page = client.get("/")
+    assert page.status_code == 200
+    assert "text/html" in page.headers["content-type"]
+    assert "<title>neon-agent" in page.text
+    assert client.get("/app.js").status_code == 200
+    assert client.get("/api/health").json()["status"] == "ok"  # routes win over files

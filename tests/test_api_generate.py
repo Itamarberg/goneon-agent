@@ -108,15 +108,16 @@ def test_an_unhandled_error_reaches_the_browser_as_json_with_cors_headers(monkey
         raise RuntimeError("TopologyException: side location conflict")
 
     monkeypatch.setattr(main, "generate_points", boom)
-    with TestClient(main.app, raise_server_exceptions=False) as c:
-        r = c.post(
-            "/api/generate",
-            json={
-                "area_id": "langstrasse",
-                "object": {"kind": "tree", "geometry": "point", "count": 3},
-            },
-            headers={"origin": "http://127.0.0.1:5173"},
-        )
+    # No `with`: entering the client runs the lifespan, and the MCP session
+    # manager it starts may only run once per process (test_mcp owns that run).
+    r = TestClient(main.app, raise_server_exceptions=False).post(
+        "/api/generate",
+        json={
+            "area_id": "langstrasse",
+            "object": {"kind": "tree", "geometry": "point", "count": 3},
+        },
+        headers={"origin": "http://127.0.0.1:5173"},
+    )
     assert r.status_code == 500
     assert r.headers.get("access-control-allow-origin") == "*"
     assert "TopologyException" in r.json()["detail"]

@@ -10,6 +10,7 @@ import contextlib
 import logging
 import os
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -130,13 +131,12 @@ app.add_middleware(
 )
 
 
-@app.get("/")
+@app.get("/api")
 def index() -> dict:
     """A signpost.
 
-    This port serves the API, not the website — the page is a static site on its
-    own origin. Landing here with a bare "Not Found" tells you nothing, so say
-    what is where.
+    Landing on the API prefix in a browser with a bare "Not Found" tells you
+    nothing, so say what is where.
     """
     return {
         "service": "neon-agent API",
@@ -567,3 +567,10 @@ def chat(request: ChatRequest, http_request: Request) -> dict:
         "proposals": reply.proposals,
         "warnings": reply.warnings,
     }
+
+
+# The website, served by the same app: one origin locally, one deployment on
+# Vercel (which lifts the directory onto its CDN at build time). Registered
+# last so every API route wins over a file of the same name.
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+app.frontend("/", directory=WEB_DIR, fallback="index.html", check_dir=WEB_DIR.is_dir())
