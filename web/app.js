@@ -226,8 +226,8 @@ function refreshSummaries() {
 
 const labelFor = (kind) =>
   ({ tree: "street trees", bike_rack: "bike racks", bench: "benches",
-     charging_station: "charging stations", power_line: "power line", pipe: "pipe",
-     path: "path" }[kind] || kind);
+     charging_station: "charging stations", power_line: "power line",
+     pipe: "pipe" }[kind] || kind);
 
 /* -------------------------------------------------------------- step 1 ---- */
 
