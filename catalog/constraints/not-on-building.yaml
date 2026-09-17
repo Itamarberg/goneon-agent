@@ -1,0 +1,9 @@
+id: not-on-building
+title: Object is not inside a building footprint
+type: not_within
+layer: building
+hard: true
+source:
+  text: "Geometric sanity: an object cannot be placed inside a building."
+  kind: convention
+verified: true

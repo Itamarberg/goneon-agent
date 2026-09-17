@@ -1,0 +1,12 @@
+id: bench-near-kindergarten
+title: Bench stays within 80 m of a kindergarten
+type: max_distance
+applies_to: bench
+layer: kindergarten
+params:
+  d_m: 80.0
+hard: false
+source:
+  text: "Planning convention: parents and carers wait outside kindergartens."
+  kind: convention
+verified: true

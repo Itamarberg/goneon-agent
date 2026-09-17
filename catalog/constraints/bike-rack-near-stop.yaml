@@ -1,0 +1,12 @@
+id: bike-rack-near-stop
+title: Bike racks stay close to a public transport stop
+type: max_distance
+applies_to: bike_rack
+layer: transit_stop
+params:
+  d_m: 50.0
+hard: false
+source:
+  text: "Planning convention: bike parking supports interchange with public transport."
+  kind: convention
+verified: true

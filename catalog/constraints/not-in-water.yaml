@@ -1,0 +1,10 @@
+id: not-in-water
+title: Object is not in water
+type: not_within
+layer: water
+hard: true
+source:
+  text: "Geometric sanity: an object cannot stand in the Limmat, the Sihl or a pond."
+  kind: convention
+verified: true
+note: "Water surfaces from the cantonal land-cover layer (Bodenbedeckung, class Gewässer)."

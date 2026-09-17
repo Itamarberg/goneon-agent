@@ -1,0 +1,12 @@
+id: tree-cool-corridor
+title: Tree stays within 60 m of green space
+type: max_distance
+applies_to: tree
+layer: green_space
+params:
+  d_m: 60.0
+hard: false
+source:
+  text: "Planning convention after the city's Fachplanung Hitzeminderung (2020): new trees connect existing green into cooling corridors rather than standing alone."
+  kind: convention
+verified: false

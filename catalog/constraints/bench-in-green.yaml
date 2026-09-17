@@ -1,0 +1,10 @@
+id: bench-in-green
+title: Bench stands in green space
+type: within
+applies_to: bench
+layer: green_space
+hard: false
+source:
+  text: "Planning convention: a bench in a park is used more than a bench on a kerb."
+  kind: convention
+verified: true

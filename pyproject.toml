@@ -1,0 +1,48 @@
+[project]
+name = "neon-agent"
+version = "0.1.0"
+description = "Agentic infrastructure planning for planners: constraints as data, deterministic generators, cited checks."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "shapely>=2.0",
+    "numpy>=2.0",
+    "pyyaml>=6.0",
+    "pyproj>=3.7",
+    "scipy>=1.18.1",
+]
+
+[project.optional-dependencies]
+# Split on purpose: the geometry and the agent install independently, so the
+# deterministic core can be developed and tested without an API key, and the MCP
+# server's heavier dependency tree is opt-in.
+agent = ["anthropic>=0.69"]
+mcp = [
+    "mcp>=2.0",
+    # Not a runtime requirement: cryptography publishes no x86_64 macOS wheel for
+    # its current release, so an Intel Mac tries to build it from source and
+    # fails. Linux (the container) is unaffected; this keeps local dev working.
+    "cryptography<46; platform_system == 'Darwin' and platform_machine == 'x86_64'",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3", "httpx>=0.27", "ruff>=0.7"]
+
+[tool.setuptools]
+packages = ["domain", "checks", "catalog", "data", "generate", "tools", "agent", "api", "mcp_server"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

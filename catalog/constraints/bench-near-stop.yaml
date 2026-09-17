@@ -1,0 +1,12 @@
+id: bench-near-stop
+title: Bench stays close to a public transport stop
+type: max_distance
+applies_to: bench
+layer: transit_stop
+params:
+  d_m: 30.0
+hard: false
+source:
+  text: "Planning convention: seating serves people waiting."
+  kind: convention
+verified: true

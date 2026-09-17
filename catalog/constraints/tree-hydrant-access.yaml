@@ -1,0 +1,15 @@
+id: tree-hydrant-access
+title: Tree keeps clear of hydrants
+type: min_distance
+applies_to: tree
+layer: hydrant
+params:
+  d_m: 2.0
+hard: true
+source:
+  text: "Operational convention: the fire brigade needs unobstructed access to a hydrant."
+  kind: convention
+verified: false
+note: >-
+  No legal citation. Shown as a convention so a planner can see it is not a rule
+  they can point an authority at.

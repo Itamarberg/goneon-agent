@@ -1,0 +1,13 @@
+id: tree-crown-space
+title: Tree keeps 8 m from an existing tree
+type: min_distance
+applies_to: tree
+layer: tree
+params:
+  d_m: 8.0
+hard: false
+source:
+  text: "Planning convention: crowns of neighbouring street trees compete for light and root volume below about 8 m."
+  kind: convention
+verified: false
+note: "Measured against the city's tree register, so a new tree next to an existing one costs, a new tree in a gap does not."

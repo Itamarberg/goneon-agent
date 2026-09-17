@@ -99,25 +99,27 @@ into the deployment. Every feature carries `source` and `source_url`.
 
 | Layer | Source | Licence | Status |
 |---|---|---|---|
-| buildings (footprints) | Stadt Zürich, Amtliche Vermessungsdaten 2025, Bodenbedeckung | CC0 | confirmed available |
+| buildings (footprints) | AV MOpublic Bodenbedeckung (cantonal WFS) | CC0 | confirmed in P1 |
 | schools / kindergartens | Stadt Zürich, Schulanlagen | CC0 | confirmed |
 | street trees | Stadt Zürich, Baumkataster | CC0 | confirmed |
 | hydrants | Stadt Zürich, Hydranten | CC0 | confirmed |
-| roads & sidewalks (areas) | Stadt Zürich, Amtliche Vermessung, Bodenbedeckung | CC0 | confirmed |
+| roads & sidewalks (areas) | same dataset, split by the `artzh` class | CC0 | confirmed in P1 |
 | electrical installations > 36 kV (lines, cables, substations) | BFE, opendata.swiss | open | confirmed |
-| public transport stops | Stadt Zürich / ZVV open data | open | **verify in P1** |
-| parks & green spaces | Stadt Zürich open data | CC0 | **verify in P1** |
-| zoning (BZO) | Stadt Zürich open data | CC0 | **verify in P1**, optional |
+| public transport stops | Kanton Zürich / ZVV, `ogd-0140_giszhpub_zvv_haltestellen_p` | open | confirmed in P1 |
+| parks & green spaces | part of AV Bodenbedeckung (`Parkanlage`, …) | CC0 | confirmed in P1 |
+| zoning (BZO) | Stadt Zürich open data | CC0 | **cut**: no constraint in the MVP needs it |
 | terrain | swisstopo swissALTI3D 2 m | swisstopo OGD | confirmed; **cut** unless a constraint needs it |
 
 Not available and not faked: underground utilities (Leitungskataster is restricted),
 sewer network, low/medium-voltage cables. Constraints that need them show
 "cannot be evaluated: data not open".
 
-**Study area**: one Zurich quarter ≤ 1 km² with at least one school, street trees,
-a >36 kV line or cable nearby, and tram stops. Choose in P1 from what the data
-actually contains. Fallback: allow the planner's area anywhere inside a larger
-pre-fetched extent (Kreis-level) if file size stays < 30 MB.
+**Study area (decided in P1)**: `zurich-kreis-5`, the 1 km² square
+`2681800, 1247500 – 2682800, 1248500` (LV95) covering Escher-Wyss / Limmatplatz and
+the northern edge of Kreis 4. Chosen by counting features in three candidates; it
+has the most of what the catalog needs: 3 schools, 6 kindergartens, 1245 street
+trees, 10 stops and 41 segments of >36 kV installation. Baked size: 2.8 MB, well
+inside the 30 MB budget.
 
 ## 6. Curated catalog (starting set)
 
@@ -200,6 +202,10 @@ About 14 hours of work. Ordered by risk; each phase ends deployed.
 | P5 | Website: stepper, variant cards, drag-edit + re-check, export GeoJSON + one-page report | 2.5 | someone who hasn't seen it completes the tutorial unaided |
 | P6 | MCP endpoint, README (use the site / use the API / use MCP / add a constraint) | 0.5 | an MCP client lists and runs `generate_points` against the deployed URL |
 
+**All six phases are implemented.** Not yet done: deploying to Vercel and Render
+(the configs are in the repo, the accounts are not connected), and one end-to-end
+run of the chat against the live model — no API key was available while building.
+
 Cut order if behind: one-page report → line generator variants (keep one) →
 refine-by-chat (keep chat for drafting constraints) → MCP (keep REST).
 
@@ -217,6 +223,10 @@ Then the video (≈ 2 h, §10).
 | 09-16 | **Generate, not only check** | Planners asked for plans on top of chosen constraints; generators are generic because constraints become geometry |
 | 09-16 | Thresholds come from the catalog or the planner, never the model | Keeps ADR 0001 true for user-defined constraints |
 | 09-16 | No server sessions; state in the browser | Removes persistence, auth and scaling work; share links still work |
+| 09-16 | One dataset (AV Bodenbedeckung) split into five layers by its `artzh` class | Buildings, pavements, roads, parks and water come from one fetch; a layer is a filter, not a new integration |
+| 09-16 | Layers baked into the repo and the image, fetched by a script, not at request time | 100 planners must not hit a public WFS at once; a fetch script keeps the provenance reproducible |
+| 09-16 | scipy added for the line generator | A grid least-cost path over 250k cells is seconds in a Python heap and milliseconds in `scipy.sparse.csgraph` |
+| 09-16 | MCP and the agent SDK are separate optional extras | The deterministic half installs and tests without an API key, and MCP's dependency tree stays opt-in |
 | 09-16 | Not modelled, and said so: magnetic fields (NISV), hydraulics, underground conflicts | Need calculations or data that aren't possible overnight; shown as "proxy" or "cannot be evaluated" |
 
 ## 10. Submission
@@ -237,7 +247,9 @@ Then the video (≈ 2 h, §10).
 
 ## 11. Open questions
 
-- Which quarter (decided in P1 from the data).
-- Are tram stops, parks, VBZ masts available as open geodata? (P1)
+- ~~Which quarter~~ → `zurich-kreis-5`, see §5.
+- ~~Are tram stops and parks open geodata?~~ → yes, both baked. **VBZ masts and
+  overhead contact lines are not**, so `tree-fahrleitung` cannot be evaluated and
+  the tool says so instead of passing it.
 - Model for the hackathon: `claude-opus-5` vs a cheaper model, depending on the
   organisers' budget; per-IP rate limit on chat only.

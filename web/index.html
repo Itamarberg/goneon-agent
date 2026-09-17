@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>neon-agent — infrastructure planning</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Helvetica Neue first (it is there on the machines goNEON uses); Archivo is the
+     webfont fallback the brand system names for everyone else. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;900&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <aside id="panel">
+    <header id="panel-head">
+      <div class="head-row">
+        <h1>neon-agent</h1>
+        <button class="btn small" id="reset" title="Clear the plan and start again">Start over</button>
+      </div>
+      <p class="sub">Place infrastructure on real open data, checked against cited rules.</p>
+    </header>
+
+    <div id="steps">
+      <!-- 1. Area -->
+      <section class="step" data-step="1" data-open="true">
+        <button class="step-head" type="button">
+          <span class="num">1</span>
+          <span class="step-title">Area</span>
+          <span class="step-summary"></span>
+        </button>
+        <div class="step-body">
+          <p class="hint">Pick a quarter. Real open data is loaded for each one.</p>
+          <div id="area-list" class="cards"></div>
+          <div class="sub-area">
+            <button class="btn" id="area-draw">Narrow it down on the map</button>
+            <button class="btn" id="area-reset" hidden>Use the whole quarter</button>
+            <p class="hint" id="area-hint"></p>
+          </div>
+          <div id="area-counts" class="counts"></div>
+          <div class="step-foot"><button class="btn primary next">Continue</button></div>
+        </div>
+      </section>
+
+      <!-- 2. Object -->
+      <section class="step" data-step="2">
+        <button class="step-head" type="button">
+          <span class="num">2</span>
+          <span class="step-title">What to place</span>
+          <span class="step-summary"></span>
+        </button>
+        <div class="step-body">
+          <div class="cards">
+            <button class="card" id="kind-point" data-active="true">
+              <strong>Objects</strong><span>trees, racks, benches, charging points</span>
+            </button>
+            <button class="card" id="kind-line">
+              <strong>A line</strong><span>cable, power line, pipe, path</span>
+            </button>
+          </div>
+          <div id="point-options">
+            <label class="field"><span>Object</span>
+              <select id="object-kind">
+                <option value="tree">Street trees</option>
+                <option value="bike_rack">Bike racks</option>
+                <option value="bench">Benches</option>
+                <option value="charging_station">Charging stations</option>
+              </select>
+            </label>
+            <label class="field"><span>How many</span>
+              <input type="number" id="object-count" value="20" min="1" max="200">
+            </label>
+          </div>
+          <div id="line-options" hidden>
+            <label class="field"><span>Line</span>
+              <select id="line-kind">
+                <option value="power_line">Power line / cable</option>
+                <option value="pipe">Pipe</option>
+                <option value="path">Path</option>
+              </select>
+            </label>
+            <p class="hint" id="line-endpoints">Click the map to set the start, then the end.</p>
+          </div>
+          <div class="step-foot"><button class="btn primary next">Continue</button></div>
+        </div>
+      </section>
+
+      <!-- 3. Constraints -->
+      <section class="step" data-step="3">
+        <button class="step-head" type="button">
+          <span class="num">3</span>
+          <span class="step-title">Constraints</span>
+          <span class="step-summary"></span>
+        </button>
+        <div class="step-body">
+          <p class="hint">
+            Tick what the plan must respect. <b>Must hold</b> removes ground from the map;
+            <b>preference</b> is traded off, and its importance decides which preference
+            wins when they conflict.
+          </p>
+          <div id="catalog" class="catalog"></div>
+
+          <details id="own-rule">
+            <summary>Add your own constraint</summary>
+            <p class="hint">
+              The threshold and the source are yours — nothing here supplies a number.
+              It is added as <b>your own rule</b>, not as a regulation.
+            </p>
+            <label class="field"><span>Rule</span>
+              <input id="own-title" placeholder="e.g. Trees stay clear of the school">
+            </label>
+            <label class="field"><span>Must be</span>
+              <select id="own-type"></select>
+            </label>
+            <label class="field" id="own-layer-field"><span>of / from</span>
+              <select id="own-layer"></select>
+            </label>
+            <label class="field" id="own-distance-field"><span>Distance (m)</span>
+              <input type="number" id="own-distance" min="0" step="0.5" placeholder="25">
+            </label>
+            <label class="field"><span>Source</span>
+              <input id="own-source" placeholder="where this rule comes from">
+            </label>
+            <div class="field">
+              <span>Counts as</span>
+              <div class="segmented" id="own-hard">
+                <button type="button" data-hard="true" data-on="true">must hold</button>
+                <button type="button" data-hard="false">preference</button>
+              </div>
+            </div>
+            <div class="own-foot">
+              <button class="btn primary" id="own-add">Add constraint</button>
+              <span id="own-feedback" class="hint"></span>
+            </div>
+          </details>
+
+          <div id="zone-summary" class="zone-summary"></div>
+          <div class="step-foot"><button class="btn primary next">Continue</button></div>
+        </div>
+      </section>
+
+      <!-- 4. Generate -->
+      <section class="step" data-step="4">
+        <button class="step-head" type="button">
+          <span class="num">4</span>
+          <span class="step-title">Generate</span>
+          <span class="step-summary"></span>
+        </button>
+        <div class="step-body">
+          <div class="dial">
+            <label for="fit">
+              <span>Best fit: <b id="fit-value">5%</b></span>
+              <span class="dial-ends"><em>strict</em><em>roomy</em></span>
+            </label>
+            <input type="range" id="fit" min="0" max="60" step="1" value="5"
+                   aria-label="How far from the best fit a position may be and still count as good ground">
+            <p class="hint">How far from the best position for your preferences a spot may
+              be and still count as good ground for variant B. Strict keeps the objects where
+              the preferences want them; roomy spreads them out.</p>
+          </div>
+          <button class="btn primary wide" id="generate">Generate plan variants</button>
+          <div id="variants" class="variants"></div>
+          <div id="infeasible" class="infeasible" hidden></div>
+          <div class="step-foot"><button class="btn primary next">Continue</button></div>
+        </div>
+      </section>
+
+      <!-- 5. Export -->
+      <section class="step" data-step="5">
+        <button class="step-head" type="button">
+          <span class="num">5</span>
+          <span class="step-title">Export</span>
+          <span class="step-summary"></span>
+        </button>
+        <div class="step-body">
+          <p class="hint">The constraints and findings travel with the plan.</p>
+          <button class="btn" id="export-pdf" disabled>Print / save as PDF</button>
+          <button class="btn" id="export-geojson" disabled>Download GeoJSON</button>
+        </div>
+      </section>
+    </div>
+
+    <footer>
+      <details id="layers-panel">
+        <summary>Data layers</summary>
+        <div id="layers" class="layers"></div>
+        <h3>Not available, not invented</h3>
+        <ul id="gaps" class="gaps"></ul>
+      </details>
+      <span id="api-state" class="pill">connecting…</span>
+    </footer>
+  </aside>
+
+  <div id="map-wrap">
+    <div id="map"></div>
+    <div id="chat">
+      <div id="chat-head">
+        <strong>Ask the agent</strong>
+        <span id="chat-state" class="pill small"></span>
+        <button id="chat-toggle" class="icon-btn" title="Hide">–</button>
+      </div>
+      <div id="chat-log"></div>
+      <form id="chat-form">
+        <input id="chat-input" placeholder="e.g. keep the trees 20 m from the school" autocomplete="off">
+        <button class="btn primary" type="submit">Send</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- The printable report. Hidden on screen, and the only thing that prints. -->
+<div id="report" aria-hidden="true"></div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
